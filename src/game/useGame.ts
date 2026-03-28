@@ -1,42 +1,22 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { RefObject } from 'react';
 import type { Pigeon, ShotEffect, Particle, HUDState, BehaviorType } from './types';
-import {
-  renderBackground, renderPigeon, renderEffect, renderCrosshair, renderHUD,
-} from './renderer';
+import { renderBackground, renderPigeon, renderEffect, renderCrosshair, renderHUD } from './renderer';
+import { playShot, playHit, playMiss, playWaveStart } from './sounds';
 
-// ─── Internal game state (all in ref for performance) ─────────────────────────
+// ─── Internal state ───────────────────────────────────────────────────────────
 
 interface GameInternal {
-  // Camera
-  cameraX: number;
-  targetCameraX: number;
-
-  // Crosshair (screen px)
   crosshairX: number;
   crosshairY: number;
-
-  // Input
-  joystickX: number;
-  joystickY: number;
   shootPressed: boolean;
   shootCooldown: number;
-
-  // Player
   score: number;
   wave: number;
   health: number;
-  ammo: number;
-  maxAmmo: number;
-  reloading: boolean;
-  reloadProgress: number; // 0..1
-
-  // Entities
   pigeons: Pigeon[];
   effects: ShotEffect[];
   nextId: number;
-
-  // Wave
   waveSpawned: number;
   waveTarget: number;
   spawnTimer: number;
@@ -44,55 +24,49 @@ interface GameInternal {
   betweenWavesTimer: number;
   waveMessage: string;
   waveMessageTimer: number;
-
-  // Timing
   startTime: number;
   lastFrameTime: number;
   elapsed: number;
-
-  // Phase
   phase: 'playing' | 'gameover';
   gameoverTimer: number;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const RELOAD_DURATION = 2.2;
-const SHOOT_COOLDOWN = 0.18;
-const BETWEEN_WAVES_DELAY = 3.5;
-const WAVE_MESSAGE_DURATION = 2.5;
-const HUD_UPDATE_INTERVAL = 80; // ms
+const SHOOT_COOLDOWN = 0.15;
+const BETWEEN_WAVES_DELAY = 3.0;
+const WAVE_MSG_DURATION = 2.2;
+const HUD_INTERVAL = 80;
 
 // ─── Pigeon factory ───────────────────────────────────────────────────────────
 
 let _pid = 0;
 
-function spawnPigeon(wave: number, isBoss: boolean): Pigeon {
-  const psycho = Math.min(0.95, 0.1 + wave * 0.06 + Math.random() * 0.3);
+function spawnPigeon(wave: number, isBoss: boolean, W: number): Pigeon {
+  const psycho = Math.min(0.95, 0.08 + wave * 0.055 + Math.random() * 0.28);
   const behaviors: BehaviorType[] = ['drifter', 'zigzagger', 'diver', 'circler'];
-  const behaviorWeights = [0.40, 0.30, 0.20, 0.10];
+  const weights = [0.40, 0.30, 0.20, 0.10];
   let r = Math.random();
   let behavior: BehaviorType = 'drifter';
   for (let i = 0; i < behaviors.length; i++) {
-    if (r < behaviorWeights[i]) { behavior = behaviors[i]; break; }
-    r -= behaviorWeights[i];
+    if (r < weights[i]) { behavior = behaviors[i]; break; }
+    r -= weights[i];
   }
 
-  const spawnSide = Math.random() < 0.5 ? -1 : 1;
-  const worldX = spawnSide * (600 + Math.random() * 600);
+  // Spawn within visible screen width, from the sides
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const worldX = side * (W * 0.3 + Math.random() * W * 0.18);
 
   return {
     id: ++_pid,
     worldX,
-    normalY: 0.02 + Math.random() * 0.10,
-    scale: 0.30,
+    normalY: 0.02 + Math.random() * 0.08,
+    scale: 0.42,
     vx: 0,
-    vy: 0.018 + psycho * 0.025 + Math.random() * 0.015,
+    vy: 0.016 + psycho * 0.022 + Math.random() * 0.012,
     state: 'flying',
     hitTimer: 0,
-    deadTimer: 0.6,
+    deadTimer: 0.8,
     wingPhase: Math.random() * Math.PI * 2,
-    wingSpeed: 5 + psycho * 6 + Math.random() * 4,
+    wingSpeed: 5 + psycho * 5 + Math.random() * 3,
     rotation: 0,
     psycho,
     zigPhase: Math.random() * Math.PI * 2,
@@ -105,177 +79,152 @@ function spawnPigeon(wave: number, isBoss: boolean): Pigeon {
 
 // ─── Pigeon update ────────────────────────────────────────────────────────────
 
-function updatePigeon(p: Pigeon, dt: number, _W: number): boolean {
+function updatePigeon(p: Pigeon, dt: number, W: number): boolean {
   p.wingPhase += p.wingSpeed * dt;
-  p.zigPhase += 2.2 * dt;
+  p.zigPhase += 2.0 * dt;
 
   if (p.state === 'hit') {
     p.hitTimer -= dt;
-    p.rotation += 4 * dt;
-    p.normalY += 0.08 * dt;
-    p.scale = Math.max(0, p.scale - 0.3 * dt);
-    if (p.hitTimer <= 0) { p.state = 'dead'; p.deadTimer = 0.6; }
+    p.rotation += 6 * dt;
+    p.normalY += 0.06 * dt;
+    if (p.hitTimer <= 0) { p.state = 'dead'; p.deadTimer = 0.8; }
     return true;
   }
-
   if (p.state === 'dead') {
     p.deadTimer -= dt;
+    p.normalY += 0.18 * dt; // fall down
+    p.rotation += 8 * dt;
     return p.deadTimer > 0;
   }
 
-  // Movement by behavior
-  const speed = 1 + p.psycho * 1.5;
+  const speed = 1 + p.psycho * 1.4;
   switch (p.behavior) {
     case 'drifter':
-      p.vx = Math.sin(p.zigPhase * 0.6) * 120 * speed;
+      p.vx = Math.sin(p.zigPhase * 0.55) * 110 * speed;
       break;
     case 'zigzagger':
-      p.vx = Math.sin(p.zigPhase * 2.2) * 220 * speed;
+      p.vx = Math.sin(p.zigPhase * 2.0) * 200 * speed;
       break;
     case 'diver':
-      if (p.normalY > 0.35) {
-        // Dive toward center
-        p.vx += (-p.worldX * 0.8 - p.vx) * dt * 3;
-        p.vy = Math.min(0.45, p.vy + 0.08 * dt);
+      if (p.normalY > 0.32) {
+        p.vx += (-p.worldX * 0.9 - p.vx) * dt * 3;
+        p.vy = Math.min(0.42, p.vy + 0.07 * dt);
       } else {
-        p.vx = Math.sin(p.zigPhase * 0.8) * 180 * speed;
+        p.vx = Math.sin(p.zigPhase * 0.8) * 160 * speed;
       }
       break;
     case 'circler':
-      p.vx = Math.cos(p.zigPhase * 0.7) * (p.isBoss ? 280 : 200) * speed;
-      p.vy = 0.012 + Math.sin(p.zigPhase * 0.7) * 0.012;
+      p.vx = Math.cos(p.zigPhase * 0.65) * (p.isBoss ? 260 : 180) * speed;
+      p.vy = 0.010 + Math.sin(p.zigPhase * 0.65) * 0.011;
       break;
   }
 
   p.worldX += p.vx * dt;
   p.normalY += p.vy * dt;
-  p.scale = 0.28 + p.normalY * 1.35;
+  p.scale = 0.42 + p.normalY * 1.55; // bigger base scale
 
-  // Slight facing rotation based on vx
-  const targetRot = Math.atan2(p.vy * 40, p.vx) * 0.15;
-  p.rotation += (targetRot - p.rotation) * dt * 5;
+  // Bounce at screen edges
+  const halfW = W * 0.50;
+  if (Math.abs(p.worldX) > halfW) {
+    p.worldX = Math.sign(p.worldX) * halfW;
+    p.vx *= -1;
+  }
 
-  // Transition to diving when close enough
-  if (p.behavior !== 'diver' && p.normalY > 0.55 && Math.random() < 0.008) {
+  // Rotation toward movement
+  p.rotation += (Math.atan2(p.vy * 35, p.vx) * 0.12 - p.rotation) * dt * 4;
+
+  // Transition to diving when close
+  if (p.behavior !== 'diver' && p.normalY > 0.52 && Math.random() < 0.007) {
     p.behavior = 'diver';
-    p.vy = Math.max(p.vy, 0.30);
+    p.vy = Math.max(p.vy, 0.28);
   }
 
   return true;
 }
 
-// ─── Score helper ─────────────────────────────────────────────────────────────
+// ─── Score ────────────────────────────────────────────────────────────────────
 
-function calcScore(pigeon: Pigeon, crosshairY: number, H: number): number {
+function calcScore(pigeon: Pigeon): number {
   const base = pigeon.isBoss ? 500 : 100;
-  const pigeonScreenY = pigeon.normalY * H * 0.72;
-  const isHeadshot = crosshairY < pigeonScreenY - 5;
-  return base + (isHeadshot ? 150 : 0) + Math.floor(pigeon.psycho * 80);
+  return base + Math.floor(pigeon.psycho * 80) + (pigeon.behavior === 'zigzagger' ? 50 : 0);
 }
 
-// ─── Main hook ────────────────────────────────────────────────────────────────
+// ─── Hook ─────────────────────────────────────────────────────────────────────
 
-const INITIAL_HUD: HUDState = {
-  score: 0, wave: 1, health: 3, ammo: 6, maxAmmo: 6,
-  reloading: false, reloadProgress: 0, waveMessage: '', phase: 'playing',
-};
+const INIT_HUD: HUDState = { score: 0, wave: 1, health: 3, waveMessage: '', phase: 'playing' };
 
 export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
-  const [hud, setHud] = useState<HUDState>(INITIAL_HUD);
+  const [hud, setHud] = useState<HUDState>(INIT_HUD);
   const stateRef = useRef<GameInternal | null>(null);
   const rafRef = useRef<number>(0);
-  const hudTimerRef = useRef<number>(0);
-  const dprRef = useRef(1);
+  const hudTimer = useRef<number>(0);
   const sizeRef = useRef({ W: 0, H: 0 });
 
-  // ─── Shooting logic ─────────────────────────────────────────────────────────
+  // ── Shoot ────────────────────────────────────────────────────────────────
 
   const tryShoot = useCallback(() => {
     const s = stateRef.current;
     if (!s || s.phase !== 'playing') return;
-    if (s.reloading || s.ammo <= 0 || s.shootCooldown > 0) return;
+    if (s.shootCooldown > 0) return;
 
-    s.ammo--;
     s.shootCooldown = SHOOT_COOLDOWN;
+    playShot();
 
     const { W, H } = sizeRef.current;
     const cx = s.crosshairX;
     const cy = s.crosshairY;
 
-    // Hit detection: find closest pigeon under crosshair
     let hit: Pigeon | null = null;
     let bestDist = Infinity;
-
     for (const p of s.pigeons) {
       if (p.state !== 'flying' && p.state !== 'diving') continue;
-      const sx = p.worldX - s.cameraX + W / 2;
-      const sy = p.normalY * H * 0.72;
-      const hitR = Math.max(25, p.scale * 38);
-      const dist = Math.hypot(cx - sx, cy - sy);
-      if (dist < hitR && dist < bestDist) {
-        bestDist = dist;
-        hit = p;
-      }
+      const px = p.worldX + W / 2;
+      const py = p.normalY * H * 0.70;
+      const hitR = Math.max(32, p.scale * 52);
+      const dist = Math.hypot(cx - px, cy - py);
+      if (dist < hitR && dist < bestDist) { bestDist = dist; hit = p; }
     }
 
     if (hit) {
       hit.health--;
       if (hit.health <= 0) {
         hit.state = 'hit';
-        hit.hitTimer = 0.35;
-        const points = calcScore(hit, cy, H);
+        hit.hitTimer = 0.4;
+        const points = calcScore(hit);
         s.score += points;
-        const sx = hit.worldX - s.cameraX + W / 2;
-        const sy = hit.normalY * H * 0.72;
+        playHit();
+        const px = hit.worldX + W / 2;
+        const py = hit.normalY * H * 0.70;
         s.effects.push({
-          id: s.nextId++,
-          x: sx, y: sy,
-          isHit: true,
-          timer: 1.0,
+          id: s.nextId++, x: px, y: py, isHit: true, timer: 1.0,
           scoreText: `+${points}`,
-          particles: Array.from({ length: 18 }, (_, i) => {
-            const angle = (i / 18) * Math.PI * 2 + Math.random() * 0.5;
-            const spd = 60 + Math.random() * 120;
+          particles: Array.from({ length: 20 }, (_, i) => {
+            const angle = (i / 20) * Math.PI * 2 + Math.random() * 0.4;
+            const spd = 70 + Math.random() * 130;
             return {
-              x: sx, y: sy,
-              vx: Math.cos(angle) * spd,
-              vy: Math.sin(angle) * spd - 30,
-              decay: 1.8 + Math.random() * 1.5,
+              x: px, y: py,
+              vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd - 40,
+              decay: 1.6 + Math.random() * 1.4,
               life: 1,
-              size: 3 + Math.random() * 5,
-              color: Math.random() < 0.6 ? '#aaaaaa' : '#cc2200',
+              size: 4 + Math.random() * 6,
+              color: Math.random() < 0.55 ? '#c8c0b0' : (Math.random() < 0.5 ? '#cc2200' : '#f0e060'),
             } as Particle;
           }),
         });
       } else {
-        // Boss hit (not dead yet)
-        const sx = hit.worldX - s.cameraX + W / 2;
-        const sy = hit.normalY * H * 0.72;
-        s.effects.push({
-          id: s.nextId++, x: sx, y: sy,
-          isHit: true, timer: 0.6,
-          scoreText: '💥',
-          particles: [],
-        });
+        // Boss partial hit
+        playHit();
+        const px = hit.worldX + W / 2;
+        const py = hit.normalY * H * 0.70;
+        s.effects.push({ id: s.nextId++, x: px, y: py, isHit: true, timer: 0.5, scoreText: '💥', particles: [] });
       }
     } else {
-      // Miss
-      s.effects.push({
-        id: s.nextId++,
-        x: cx, y: cy,
-        isHit: false,
-        timer: 0.5,
-        particles: [],
-      });
+      playMiss();
+      s.effects.push({ id: s.nextId++, x: cx, y: cy, isHit: false, timer: 0.45, particles: [] });
     }
+  }, []);
 
-    if (s.ammo === 0 && !s.reloading) {
-      s.reloading = true;
-      s.reloadProgress = 0;
-    }
-  }, [canvasRef]);
-
-  // ─── Game loop ──────────────────────────────────────────────────────────────
+  // ── Game loop ────────────────────────────────────────────────────────────
 
   const loop = useCallback((ts: number) => {
     const s = stateRef.current;
@@ -289,62 +238,36 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const ctx = canvas.getContext('2d')!;
     const { W, H } = sizeRef.current;
 
-    // ── Update ──────────────────────────────────────────────────────────────
+    // ── Update ─────────────────────────────────────────────────────────────
 
-    // Camera
-    const cameraSpeed = 380;
-    s.targetCameraX = Math.max(-500, Math.min(500, s.targetCameraX + s.joystickX * cameraSpeed * dt));
-    s.cameraX += (s.targetCameraX - s.cameraX) * Math.min(1, dt * 8);
-
-    // Crosshair clamp
-    s.crosshairX = Math.max(W * 0.28, Math.min(W * 0.72, s.crosshairX));
-    s.crosshairY = Math.max(H * 0.08, Math.min(H * 0.88, s.crosshairY));
-
-    // Shoot auto-repeat if held
     s.shootCooldown = Math.max(0, s.shootCooldown - dt);
-    if (s.shootPressed && s.shootCooldown === 0 && !s.reloading && s.ammo > 0) {
-      tryShoot();
-    }
+    if (s.shootPressed && s.shootCooldown === 0) tryShoot();
 
-    // Reload
-    if (s.reloading) {
-      s.reloadProgress = Math.min(1, s.reloadProgress + dt / RELOAD_DURATION);
-      if (s.reloadProgress >= 1) {
-        s.reloading = false;
-        s.ammo = s.maxAmmo;
-      }
-    }
-
-    // Pigeons update
+    // Pigeons
     s.pigeons = s.pigeons.filter(p => {
       const alive = updatePigeon(p, dt, W);
-      if (alive && p.normalY > 0.95 && (p.state === 'flying' || p.state === 'diving')) {
-        // Pigeon reached player
+      if (alive && p.normalY > 0.96 && (p.state === 'flying' || p.state === 'diving')) {
         p.state = 'dead';
         s.health = Math.max(0, s.health - 1);
-        if (s.health === 0) {
-          s.phase = 'gameover';
-          s.gameoverTimer = 1.5;
-        }
+        if (s.health === 0) { s.phase = 'gameover'; s.gameoverTimer = 1.5; }
         return false;
       }
       return alive;
     });
 
-    // Effects update
+    // Effects
     s.effects = s.effects.filter(e => {
       e.timer -= dt;
       e.particles.forEach(p => {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.vy += 160 * dt; // gravity
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vy += 170 * dt;
         p.life -= p.decay * dt;
       });
       e.particles = e.particles.filter(p => p.life > 0);
       return e.timer > 0 || e.particles.length > 0;
     });
 
-    // Wave message countdown
+    // Wave message
     if (s.waveMessageTimer > 0) {
       s.waveMessageTimer -= dt;
       if (s.waveMessageTimer <= 0) s.waveMessage = '';
@@ -353,25 +276,22 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
     // Wave spawning
     if (!s.betweenWaves && s.phase === 'playing') {
       s.spawnTimer -= dt;
-      const remaining = s.pigeons.filter(p => p.state !== 'dead').length;
-
+      const alive = s.pigeons.filter(p => p.state !== 'dead').length;
       if (s.waveSpawned < s.waveTarget && s.spawnTimer <= 0) {
-        const isBoss = s.waveTarget <= 1 && s.wave % 5 === 0;
-        s.pigeons.push(spawnPigeon(s.wave, isBoss));
+        const isBoss = s.wave % 5 === 0 && s.waveSpawned === 0;
+        s.pigeons.push(spawnPigeon(s.wave, isBoss, W));
         s.waveSpawned++;
-        s.spawnTimer = Math.max(0.5, 2.2 - s.wave * 0.1);
+        s.spawnTimer = Math.max(0.45, 2.0 - s.wave * 0.09);
       }
-
-      if (s.waveSpawned >= s.waveTarget && remaining === 0) {
-        // Wave complete
+      if (s.waveSpawned >= s.waveTarget && alive === 0) {
         s.betweenWaves = true;
         s.betweenWavesTimer = BETWEEN_WAVES_DELAY;
         s.wave++;
-        s.waveMessage = `WELLE ${s.wave} KOMMT!`;
-        s.waveMessageTimer = WAVE_MESSAGE_DURATION;
+        s.waveMessage = `WELLE ${s.wave}!`;
+        s.waveMessageTimer = WAVE_MSG_DURATION;
+        playWaveStart();
       }
     }
-
     if (s.betweenWaves) {
       s.betweenWavesTimer -= dt;
       if (s.betweenWavesTimer <= 0) {
@@ -382,76 +302,41 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
       }
     }
 
-    // Game over delay
-    if (s.phase === 'gameover') {
-      s.gameoverTimer -= dt;
-    }
+    if (s.phase === 'gameover') s.gameoverTimer -= dt;
 
-    // ── Render ──────────────────────────────────────────────────────────────
+    // ── Render ─────────────────────────────────────────────────────────────
 
     ctx.clearRect(0, 0, W, H);
+    renderBackground(ctx, W, H, s.elapsed);
 
-    renderBackground(ctx, W, H, s.cameraX, s.elapsed);
-
-    // Sort pigeons back-to-front (small scale first)
-    const sortedPigeons = [...s.pigeons].sort((a, b) => a.scale - b.scale);
-    for (const p of sortedPigeons) {
-      const sx = p.worldX - s.cameraX + W / 2;
-      const sy = p.normalY * H * 0.72;
-      renderPigeon(ctx, p, sx, sy);
+    const sorted = [...s.pigeons].sort((a, b) => a.scale - b.scale);
+    for (const p of sorted) {
+      renderPigeon(ctx, p, p.worldX + W / 2, p.normalY * H * 0.70);
     }
-
     for (const e of s.effects) renderEffect(ctx, e);
+    if (s.phase === 'playing') renderCrosshair(ctx, s.crosshairX, s.crosshairY);
+    renderHUD(ctx, W, H, { score: s.score, wave: s.wave, health: s.health, waveMessage: s.waveMessage, phase: s.phase });
 
-    if (s.phase === 'playing') {
-      renderCrosshair(ctx, s.crosshairX, s.crosshairY, s.reloading, s.reloadProgress);
-    }
-
-    renderHUD(ctx, W, H, {
-      score: s.score,
-      wave: s.wave,
-      health: s.health,
-      ammo: s.ammo,
-      maxAmmo: s.maxAmmo,
-      reloading: s.reloading,
-      reloadProgress: s.reloadProgress,
-      waveMessage: s.waveMessage,
-      phase: s.phase,
-    });
-
-    // ── HUD state update (throttled) ────────────────────────────────────────
-
+    // Throttled React state update
     const now = Date.now();
-    if (now - hudTimerRef.current > HUD_UPDATE_INTERVAL) {
-      hudTimerRef.current = now;
-      setHud({
-        score: s.score,
-        wave: s.wave,
-        health: s.health,
-        ammo: s.ammo,
-        maxAmmo: s.maxAmmo,
-        reloading: s.reloading,
-        reloadProgress: s.reloadProgress,
-        waveMessage: s.waveMessage,
-        phase: s.phase,
-      });
+    if (now - hudTimer.current > HUD_INTERVAL) {
+      hudTimer.current = now;
+      setHud({ score: s.score, wave: s.wave, health: s.health, waveMessage: s.waveMessage, phase: s.phase });
     }
 
     if (s.phase !== 'gameover' || s.gameoverTimer > 0) {
       rafRef.current = requestAnimationFrame(loop);
     } else {
-      // Final HUD update
       setHud(prev => ({ ...prev, phase: 'gameover' }));
     }
   }, [canvasRef, tryShoot]);
 
-  // ─── Resize handler ─────────────────────────────────────────────────────────
+  // ── Resize ───────────────────────────────────────────────────────────────
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    dprRef.current = dpr;
     const W = window.innerWidth;
     const H = window.innerHeight;
     sizeRef.current = { W, H };
@@ -461,104 +346,54 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
     canvas.style.height = H + 'px';
     const ctx = canvas.getContext('2d')!;
     ctx.scale(dpr, dpr);
-
-    // Re-center crosshair
     if (stateRef.current) {
       stateRef.current.crosshairX = W / 2;
       stateRef.current.crosshairY = H / 2;
     }
   }, [canvasRef]);
 
-  // ─── Start game ─────────────────────────────────────────────────────────────
+  // ── Start ────────────────────────────────────────────────────────────────
 
   const startGame = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     handleResize();
-
     const { W, H } = sizeRef.current;
-
     const now = performance.now();
     stateRef.current = {
-      cameraX: 0,
-      targetCameraX: 0,
-      crosshairX: W / 2,
-      crosshairY: H / 2,
-      joystickX: 0,
-      joystickY: 0,
-      shootPressed: false,
-      shootCooldown: 0,
-      score: 0,
-      wave: 1,
-      health: 3,
-      ammo: 6,
-      maxAmmo: 6,
-      reloading: false,
-      reloadProgress: 0,
-      pigeons: [],
-      effects: [],
-      nextId: 1,
-      waveSpawned: 0,
-      waveTarget: 6,
-      spawnTimer: 0.8,
-      betweenWaves: false,
-      betweenWavesTimer: 0,
-      waveMessage: 'JAGD BEGINNT!',
-      waveMessageTimer: 2.5,
-      startTime: now,
-      lastFrameTime: now,
-      elapsed: 0,
-      phase: 'playing',
-      gameoverTimer: 1.5,
+      crosshairX: W / 2, crosshairY: H / 2,
+      shootPressed: false, shootCooldown: 0,
+      score: 0, wave: 1, health: 3,
+      pigeons: [], effects: [], nextId: 1,
+      waveSpawned: 0, waveTarget: 5, spawnTimer: 0.8,
+      betweenWaves: false, betweenWavesTimer: 0,
+      waveMessage: 'LOS GEHT\'S!', waveMessageTimer: 2.2,
+      startTime: now, lastFrameTime: now, elapsed: 0,
+      phase: 'playing', gameoverTimer: 1.5,
     };
-
-    setHud(INITIAL_HUD);
+    setHud(INIT_HUD);
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(loop);
   }, [canvasRef, handleResize, loop]);
 
-  // ─── Lifecycle ──────────────────────────────────────────────────────────────
-
   useEffect(() => {
     window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(rafRef.current);
-    };
+    return () => { window.removeEventListener('resize', handleResize); cancelAnimationFrame(rafRef.current); };
   }, [handleResize]);
 
-  // ─── Input handlers ─────────────────────────────────────────────────────────
+  // ── Input handlers ───────────────────────────────────────────────────────
 
-  const onJoystick = useCallback((dx: number, _dy: number) => {
-    if (stateRef.current) stateRef.current.joystickX = dx;
-  }, []);
-
-  const onCrosshairMove = useCallback((x: number, y: number) => {
-    if (stateRef.current) {
-      stateRef.current.crosshairX = x;
-      stateRef.current.crosshairY = y;
-    }
+  const onAimMove = useCallback((x: number, y: number) => {
+    if (stateRef.current) { stateRef.current.crosshairX = x; stateRef.current.crosshairY = y; }
   }, []);
 
   const onShootStart = useCallback(() => {
-    if (stateRef.current) {
-      stateRef.current.shootPressed = true;
-      tryShoot();
-    }
+    if (stateRef.current) { stateRef.current.shootPressed = true; tryShoot(); }
   }, [tryShoot]);
 
   const onShootEnd = useCallback(() => {
     if (stateRef.current) stateRef.current.shootPressed = false;
   }, []);
 
-  const onReload = useCallback(() => {
-    const s = stateRef.current;
-    if (s && !s.reloading && s.ammo < s.maxAmmo) {
-      s.reloading = true;
-      s.reloadProgress = 0;
-    }
-  }, []);
-
-  return { hud, startGame, onJoystick, onCrosshairMove, onShootStart, onShootEnd, onReload };
+  return { hud, startGame, onAimMove, onShootStart, onShootEnd };
 }
