@@ -1,101 +1,572 @@
-import { useState, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 
 interface Props { onStart: () => void; }
 
+// ── Canvas drawing helpers ────────────────────────────────────────────────────
+
+function drawBackground(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#06080f');
+  sky.addColorStop(0.45, '#0c1530');
+  sky.addColorStop(0.72, '#1a2545');
+  sky.addColorStop(0.85, '#2a1505');
+  sky.addColorStop(1, '#180a04');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // City glow on horizon
+  const glow = ctx.createRadialGradient(W / 2, H * 0.80, 0, W / 2, H * 0.80, W * 0.55);
+  glow.addColorStop(0, 'rgba(255,110,20,0.38)');
+  glow.addColorStop(0.35, 'rgba(255,55,0,0.14)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 65; i++) {
+    const sx = ((i * 137.508 + 17) % 1.0) * W;
+    const sy = ((i * 97.32 + 5) % 0.5) * H;
+    const flicker = 0.3 + Math.sin(t * 1.8 + i * 1.7) * 0.35 + 0.35;
+    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, flicker * 0.9)})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.5 + (i % 3) * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Moon
+  ctx.fillStyle = 'rgba(255,252,220,0.93)';
+  ctx.beginPath(); ctx.arc(W * 0.87, H * 0.10, 20, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(180,168,138,0.28)';
+  ctx.beginPath(); ctx.arc(W * 0.87 + 7, H * 0.10 - 4, 18, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,252,220,0.93)';
+  ctx.beginPath(); ctx.arc(W * 0.87, H * 0.10, 20, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawSkyline(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  const groundY = H * 0.76;
+  ctx.fillStyle = '#080e1c';
+
+  // Landmark silhouettes
+  type BType = 0 | 1 | 2 | 3 | 4;
+  const buildings: [number, number, number, BType][] = [
+    [0.17 * W, 32, groundY * 0.80, 2],  // Messeturm
+    [0.27 * W, 24, groundY * 0.74, 3],  // Westend
+    [0.36 * W, 28, groundY * 0.62, 0],  // Trianon
+    [0.42 * W, 21, groundY * 0.91, 1],  // Commerzbank
+    [0.52 * W, 40, groundY * 0.64, 4],  // DB Twins
+    [0.62 * W, 22, groundY * 0.86, 0],  // Main Tower
+    [0.74 * W, 20, groundY * 0.57, 0],  // Taunusturm
+    [0.07 * W, 44, groundY * 0.40, 0],
+    [0.86 * W, 50, groundY * 0.38, 3],
+    [0.94 * W, 32, groundY * 0.33, 0],
+  ];
+
+  buildings.forEach(([cx, bw, bh, type]) => {
+    const left = cx - bw / 2;
+    const top = groundY - bh;
+    switch (type) {
+      case 0: ctx.fillRect(left, top, bw, bh); break;
+      case 1: // Commerzbank: triangle crown
+        ctx.fillRect(left, top + bh * 0.13, bw, bh * 0.87);
+        ctx.beginPath();
+        ctx.moveTo(left - 2, top + bh * 0.13); ctx.lineTo(cx, top); ctx.lineTo(left + bw + 2, top + bh * 0.13);
+        ctx.closePath(); ctx.fill();
+        ctx.fillRect(cx - 1, top - bh * 0.09, 2, bh * 0.09);
+        break;
+      case 2: // Messeturm: pyramid
+        ctx.fillRect(left, top + bh * 0.23, bw, bh * 0.77);
+        ctx.beginPath();
+        ctx.moveTo(left - 4, top + bh * 0.23); ctx.lineTo(cx, top); ctx.lineTo(left + bw + 4, top + bh * 0.23);
+        ctx.closePath(); ctx.fill();
+        break;
+      case 3: // Stepped
+        ctx.fillRect(left, top + bh * 0.55, bw, bh * 0.45);
+        ctx.fillRect(left + bw * 0.10, top + bh * 0.25, bw * 0.80, bh * 0.30);
+        ctx.fillRect(left + bw * 0.22, top, bw * 0.56, bh * 0.25);
+        break;
+      case 4: // Twin towers
+        ctx.fillRect(left, top, bw * 0.44, bh);
+        ctx.fillRect(left + bw * 0.56, top, bw * 0.44, bh);
+        ctx.fillRect(left, top + bh * 0.40, bw, 4);
+        break;
+    }
+
+    // Lit windows
+    ctx.fillStyle = 'rgba(200,225,255,0.10)';
+    for (let r = 0; r < 6; r++) {
+      for (let c = 0; c < Math.max(2, Math.floor(bw / 9)); c++) {
+        if (Math.sin(c * 7.3 + r * 11.7) > 0.1) {
+          ctx.fillRect(left + 3 + c * 9, top + bh * 0.12 + r * (bh * 0.75 / 6), 5, 3);
+        }
+      }
+    }
+    ctx.fillStyle = '#080e1c';
+  });
+
+  // Ground strip
+  ctx.fillRect(0, groundY, W, H - groundY);
+
+  // Ground glow
+  const groundGlow = ctx.createLinearGradient(0, groundY - 20, 0, groundY + 20);
+  groundGlow.addColorStop(0, 'rgba(255,90,20,0.15)');
+  groundGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = groundGlow;
+  ctx.fillRect(0, groundY - 20, W, 40);
+}
+
+function drawCrazyPigeon(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, s: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  const wA = Math.sin(t * 14) * 0.85;
+
+  ctx.fillStyle = '#aa9088';
+  ctx.beginPath(); ctx.ellipse(0, 0, 26, 19, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#8a7068';
+  ctx.save(); ctx.rotate(-wA);
+  ctx.beginPath(); ctx.ellipse(-16, 4, 23, 9, -0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#b8a098';
+  ctx.save(); ctx.rotate(wA);
+  ctx.beginPath(); ctx.ellipse(11, -2, 23, 9, 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#9a8878';
+  ctx.beginPath(); ctx.arc(23, -9, 15, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = 'white';
+  ctx.beginPath(); ctx.arc(28, -13, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(20, -13, 7, 0, Math.PI * 2); ctx.fill();
+
+  const ix = Math.cos(t * 9) * 3;
+  const iy = Math.sin(t * 9) * 3;
+  ctx.fillStyle = '#ff0000';
+  ctx.beginPath(); ctx.arc(28 + ix, -13 + iy, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(20 + ix * 0.8, -13 + iy * 0.8, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(28 + ix, -13 + iy, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(20 + ix * 0.8, -13 + iy * 0.8, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'white';
+  ctx.beginPath(); ctx.arc(30 + ix, -15 + iy, 1.8, 0, Math.PI * 2); ctx.fill();
+
+  ctx.strokeStyle = '#aa0000';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(18, -23); ctx.lineTo(36, -20); ctx.stroke();
+
+  ctx.fillStyle = '#ff8c00';
+  ctx.beginPath(); ctx.moveTo(38, -9); ctx.lineTo(48, -7); ctx.lineTo(38, -5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawClemens(ctx: CanvasRenderingContext2D, cx: number, cy: number, t: number, scale: number) {
+  const bob = Math.sin(t * 1.9) * 9;
+  const capeWave = Math.sin(t * 2.3);
+
+  ctx.save();
+  ctx.translate(cx, cy + bob);
+  ctx.scale(scale, scale);
+
+  // Hero glow
+  const glow = ctx.createRadialGradient(0, -40, 15, 0, -40, 170);
+  glow.addColorStop(0, 'rgba(255,215,40,0.42)');
+  glow.addColorStop(0.4, 'rgba(255,140,0,0.14)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0, -40, 170, 0, Math.PI * 2); ctx.fill();
+
+  // Cape (behind body)
+  ctx.fillStyle = '#cc1122';
+  ctx.beginPath();
+  ctx.moveTo(-10, -55);
+  ctx.bezierCurveTo(-55 + capeWave * 25, -8, -68 + capeWave * 30, 55, -50 + capeWave * 35, 95);
+  ctx.lineTo(-8, 90);
+  ctx.bezierCurveTo(-18, 48, -8, 5, -10, -55);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Boots
+  ctx.fillStyle = '#1a1a3a';
+  [[-27, 108] as [number, number], [5, 108] as [number, number]].forEach(([bx]) => {
+    ctx.fillRect(bx, 108, 22, 20);
+    ctx.beginPath(); ctx.ellipse(bx + 11, 127, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // Jeans
+  ctx.fillStyle = '#3a5a9a';
+  ctx.fillRect(-27, 48, 22, 64);
+  ctx.fillRect(5, 48, 22, 64);
+  ctx.fillRect(-27, 44, 54, 20);
+  ctx.fillStyle = '#2a1a08';
+  ctx.fillRect(-27, 42, 54, 7);
+  ctx.fillStyle = '#c89a30';
+  ctx.fillRect(-5, 42, 10, 7);
+
+  // Shirt
+  ctx.fillStyle = '#a8a8a8';
+  ctx.beginPath(); ctx.roundRect(-30, -18, 60, 66, [8, 8, 4, 4]); ctx.fill();
+  ctx.fillStyle = 'rgba(235,235,235,0.25)';
+  ctx.fillRect(-26, -14, 18, 60);
+
+  // Left arm
+  const lFist = { x: -56, y: -52 };
+  const lShldr = { x: -26, y: -12 };
+  const lAngle = Math.atan2(lFist.y - lShldr.y, lFist.x - lShldr.x);
+  const lLen = Math.hypot(lFist.x - lShldr.x, lFist.y - lShldr.y);
+  ctx.save();
+  ctx.translate((lFist.x + lShldr.x) / 2, (lFist.y + lShldr.y) / 2);
+  ctx.rotate(lAngle);
+  ctx.fillStyle = '#a8a8a8';
+  ctx.beginPath(); ctx.roundRect(-lLen / 2, -9, lLen, 18, 6); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#fad4a8';
+  ctx.beginPath(); ctx.arc(lFist.x, lFist.y, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#e8b888';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(lFist.x, lFist.y, 9, Math.PI * 0.8, Math.PI * 1.8); ctx.stroke();
+
+  // Right arm
+  const rFist = { x: 56, y: -52 };
+  const rShldr = { x: 26, y: -12 };
+  const rAngle = Math.atan2(rFist.y - rShldr.y, rFist.x - rShldr.x);
+  const rLen = Math.hypot(rFist.x - rShldr.x, rFist.y - rShldr.y);
+  ctx.save();
+  ctx.translate((rFist.x + rShldr.x) / 2, (rFist.y + rShldr.y) / 2);
+  ctx.rotate(rAngle);
+  ctx.fillStyle = '#a8a8a8';
+  ctx.beginPath(); ctx.roundRect(-rLen / 2, -9, rLen, 18, 6); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#fad4a8';
+  ctx.beginPath(); ctx.arc(rFist.x, rFist.y, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#e8b888';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(rFist.x, rFist.y, 9, -Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
+
+  // Shotgun in right hand
+  ctx.save();
+  ctx.translate(rFist.x + 8, rFist.y - 8);
+  ctx.rotate(-0.45);
+  // Stock
+  const stockG = ctx.createLinearGradient(-6, 0, 6, 0);
+  stockG.addColorStop(0, '#2a1206'); stockG.addColorStop(0.5, '#6a3810'); stockG.addColorStop(1, '#2a1206');
+  ctx.fillStyle = stockG;
+  ctx.beginPath(); ctx.roundRect(0, -6, 28, 10, 3); ctx.fill();
+  // Barrel (double)
+  [-3, 3].forEach(oy => {
+    const bG = ctx.createLinearGradient(0, oy - 4, 0, oy + 4);
+    bG.addColorStop(0, '#1a1a1a'); bG.addColorStop(0.5, '#585858'); bG.addColorStop(1, '#1a1a1a');
+    ctx.fillStyle = bG;
+    ctx.fillRect(26, oy - 3.5, 55, 7);
+    // Barrel tip
+    ctx.fillStyle = '#111';
+    ctx.fillRect(78, oy - 4.5, 5, 9);
+    ctx.fillStyle = '#040404';
+    ctx.beginPath(); ctx.ellipse(80, oy, 2.5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+  });
+  // Guard
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(14, -8, 14, 20);
+  // Trigger
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(20, 2); ctx.lineTo(24, 12); ctx.stroke();
+  ctx.restore();
+
+  // Batman logo
+  ctx.fillStyle = '#111111';
+  ctx.beginPath(); ctx.ellipse(0, 20, 23, 14, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#ffcc00';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#ffcc00';
+  ctx.beginPath();
+  ctx.moveTo(0, 11);
+  ctx.lineTo(-9, 13); ctx.lineTo(-18, 11); ctx.lineTo(-13, 17);
+  ctx.lineTo(-21, 22); ctx.lineTo(-11, 26); ctx.lineTo(-5, 22);
+  ctx.lineTo(0, 25); ctx.lineTo(5, 22); ctx.lineTo(11, 26);
+  ctx.lineTo(21, 22); ctx.lineTo(13, 17); ctx.lineTo(18, 11);
+  ctx.lineTo(9, 13); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#111111';
+  ctx.beginPath(); ctx.moveTo(-3, 11); ctx.lineTo(0, 16); ctx.lineTo(3, 11); ctx.closePath(); ctx.fill();
+
+  // Neck
+  ctx.fillStyle = '#fad4a8';
+  ctx.fillRect(-11, -24, 22, 15);
+
+  // Head (big round baby face)
+  ctx.fillStyle = '#fad4a8';
+  ctx.beginPath(); ctx.arc(0, -62, 46, 0, Math.PI * 2); ctx.fill();
+  // Chubby cheeks
+  ctx.beginPath(); ctx.arc(-42, -48, 20, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(42, -48, 20, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(-40, -56, 80, 20);
+
+  // Short blonde hair (from photo!)
+  ctx.fillStyle = '#e8c858';
+  ctx.beginPath();
+  ctx.arc(0, -66, 47, Math.PI * 1.05, Math.PI * 1.95, false);
+  ctx.arc(0, -66, 32, Math.PI * 1.95, Math.PI * 1.05, true);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#f2d870';
+  ctx.beginPath();
+  ctx.arc(2, -72, 46, Math.PI * 1.15, Math.PI * 1.82, false);
+  ctx.arc(2, -72, 38, Math.PI * 1.82, Math.PI * 1.15, true);
+  ctx.closePath(); ctx.fill();
+
+  // Eyes (big baby blue eyes)
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.ellipse(-17, -67, 15, 17, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(17, -67, 15, 17, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4880c0';
+  ctx.beginPath(); ctx.arc(-17, -66, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(17, -66, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#181818';
+  ctx.beginPath(); ctx.arc(-16, -65, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(18, -65, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.beginPath(); ctx.arc(-13, -69, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(21, -69, 3, 0, Math.PI * 2); ctx.fill();
+
+  // Eyebrows (light blonde)
+  ctx.strokeStyle = '#c8a030';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-30, -86); ctx.quadraticCurveTo(-17, -91, -5, -87); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(5, -87); ctx.quadraticCurveTo(17, -91, 30, -86); ctx.stroke();
+
+  // Nose — tiny baby button nose (2 small nostril dots only)
+  ctx.fillStyle = 'rgba(210,130,100,0.55)';
+  ctx.beginPath(); ctx.arc(-4, -52, 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -52, 2.2, 0, Math.PI * 2); ctx.fill();
+
+  // Rosy cheeks
+  ctx.fillStyle = 'rgba(255,130,120,0.28)';
+  ctx.beginPath(); ctx.ellipse(-37, -48, 15, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(37, -48, 15, 10, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Smile
+  ctx.strokeStyle = '#d08060';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-12, -38); ctx.quadraticCurveTo(0, -30, 12, -38);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawSparkle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, t: number) {
+  const s = size * (0.7 + Math.sin(t * 4.2) * 0.3);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(t * 1.6);
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2;
+    ctx.fillStyle = `rgba(255,228,55,${0.55 + Math.sin(t * 3.2 + i) * 0.3})`;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * s * 0.38, Math.sin(a) * s * 0.38);
+    ctx.lineTo(Math.cos(a + Math.PI / 4) * s, Math.sin(a + Math.PI / 4) * s);
+    ctx.lineTo(Math.cos(a + Math.PI / 2) * s * 0.38, Math.sin(a + Math.PI / 2) * s * 0.38);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
+
 export default function IntroScreen({ onStart }: Props) {
-  const [show, setShow] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setShow(true), 80); return () => clearTimeout(t); }, []);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resize = () => {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const bgPigeons = Array.from({ length: 3 }, (_, i) => ({
+      x: (0.1 + i * 0.35) * window.innerWidth,
+      y: (0.18 + i * 0.09) * window.innerHeight,
+      vx: 55 + i * 28,
+    }));
+
+    let startTs = 0;
+
+    const frame = (ts: number) => {
+      if (!startTs) startTs = ts;
+      const t = (ts - startTs) / 1000;
+      const dt = 0.016;
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.width / dpr;
+      const H = canvas.height / dpr;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+
+      drawBackground(ctx, W, H, t);
+      drawSkyline(ctx, W, H);
+
+      // Spotlight on hero
+      const spot = ctx.createRadialGradient(W * 0.5, H * 0.5, 8, W * 0.5, H * 0.5, H * 0.6);
+      spot.addColorStop(0, 'rgba(255,235,190,0.16)');
+      spot.addColorStop(0.5, 'rgba(255,190,80,0.05)');
+      spot.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = spot;
+      ctx.fillRect(0, 0, W, H);
+
+      // Background crazy pigeons
+      bgPigeons.forEach(p => {
+        p.x += p.vx * dt;
+        if (p.x > W + 80) p.x = -80;
+        const s = 0.42 + (p.y / H) * 0.35;
+        drawCrazyPigeon(ctx, p.x, p.y, t, s);
+      });
+
+      // Clemens — slightly left of center so title stays visible
+      const charScale = Math.min(H * 0.0032, W * 0.0014, 1.4);
+      const charX = W * 0.38;
+      const charY = H * 0.60;
+      drawClemens(ctx, charX, charY, t, charScale);
+
+      // Sparkles around Clemens
+      for (let i = 0; i < 8; i++) {
+        const sa = (i / 8) * Math.PI * 2 + t * 0.72;
+        const baseR = 80 * charScale;
+        const sr = baseR + Math.sin(t * 2.1 + i) * baseR * 0.2;
+        const sx = charX + Math.cos(sa) * sr;
+        const sy = (charY - 60 * charScale) + Math.sin(sa * 0.75) * sr * 0.5;
+        const ss = (6 + Math.sin(t * 3.8 + i * 1.3) * 2.5) * charScale;
+        drawSparkle(ctx, sx, sy, ss, t + i * 0.9);
+      }
+
+      // Controls panel — right side, next to Clemens
+      const ctrlX = W * 0.60;
+      const ctrlY = H * 0.44;
+      const ctrlLineH = Math.min(H * 0.040, 18);
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.font = `bold ${ctrlLineH * 0.85}px monospace`;
+      ctx.fillStyle = 'rgba(180,215,255,0.90)';
+      ctx.fillText('STEUERUNG', ctrlX, ctrlY);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(150,200,255,0.35)';
+      ctx.beginPath(); ctx.moveTo(ctrlX, ctrlY + 4); ctx.lineTo(ctrlX + W * 0.30, ctrlY + 4); ctx.stroke();
+      const lines = [
+        { icon: '>', text: 'Maus / Finger bewegen' },
+        { icon: '>', text: 'Klick / Tippen: Schiessen' },
+        { icon: '>', text: 'Handy: Querformat' },
+      ];
+      ctx.font = `${ctrlLineH * 0.78}px monospace`;
+      lines.forEach((l, li) => {
+        const ly = ctrlY + ctrlLineH * (1.6 + li * 1.55);
+        ctx.fillStyle = 'rgba(255,200,80,0.85)';
+        ctx.fillText(l.icon, ctrlX, ly);
+        ctx.fillStyle = 'rgba(200,230,255,0.82)';
+        ctx.fillText(l.text, ctrlX + 16, ly);
+      });
+      ctx.restore();
+
+      // Title — drawn LAST so it's always on top of Clemens
+      const bigSize = Math.min(W * 0.13, H * 0.17, 92);
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = `900 ${bigSize}px impact, 'Arial Black', monospace`;
+      ctx.shadowColor = '#ff8800';
+      ctx.shadowBlur = 40;
+      ctx.fillStyle = '#ffd700';
+      ctx.fillText('CLEMENS', W / 2, H * 0.12);
+      ctx.shadowBlur = 70;
+      ctx.strokeStyle = '#ff5500';
+      ctx.lineWidth = bigSize * 0.065;
+      ctx.strokeText('CLEMENS', W / 2, H * 0.12);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff5d0';
+      ctx.fillText('CLEMENS', W / 2, H * 0.12);
+      ctx.restore();
+
+      // "· PIGEON HUNTER ·"
+      const subSize = Math.min(W * 0.055, H * 0.072, 42);
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${subSize}px impact, monospace`;
+      ctx.shadowColor = '#ff0000';
+      ctx.shadowBlur = 22;
+      ctx.fillStyle = '#ff3322';
+      ctx.fillText('· PIGEON HUNTER ·', W / 2, H * 0.12 + bigSize * 0.88);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ff6655';
+      ctx.fillText('· PIGEON HUNTER ·', W / 2, H * 0.12 + bigSize * 0.88);
+      ctx.restore();
+
+      // "FRANKFURT"
+      const fSize = Math.min(W * 0.028, H * 0.038, 22);
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${fSize}px monospace`;
+      ctx.fillStyle = 'rgba(150,205,255,0.80)';
+      ctx.fillText('F R A N K F U R T', W / 2, H * 0.12 + bigSize * 0.88 + subSize * 1.15);
+      ctx.restore();
+
+      ctx.restore();
+      rafRef.current = requestAnimationFrame(frame);
+    };
+
+    rafRef.current = requestAnimationFrame(frame);
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   return (
-    <div
-      style={{
-        position: 'absolute', inset: 0,
-        background: 'linear-gradient(160deg, #1a4a8a 0%, #0d2a5a 50%, #0a1a3a 100%)',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'monospace',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Skyline silhouette */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, opacity: 0.12 }}>
-        <svg viewBox="0 0 800 160" preserveAspectRatio="xMidYMax meet" style={{ width: '100%', display: 'block' }}>
-          <polygon points="295,20 300,0 305,20 305,160 295,160" fill="white" />
-          <polygon points="170,40 175,20 180,40 180,160 170,160" fill="white" />
-          <rect x="395" y="25" width="18" height="135" rx="9" fill="white" />
-          <rect x="480" y="45" width="40" height="115" fill="white" />
-          <rect x="75" y="60" width="28" height="100" fill="white" />
-          <rect x="560" y="55" width="22" height="105" fill="white" />
-          <rect x="660" y="65" width="30" height="95" fill="white" />
-          <rect x="20" y="75" width="20" height="85" fill="white" />
-          <rect x="740" y="70" width="18" height="90" fill="white" />
-        </svg>
-      </div>
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', fontFamily: 'monospace' }}>
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0 }} />
 
-      {/* Main card */}
+      {/* CTA button — bottom center */}
       <div style={{
-        opacity: show ? 1 : 0,
-        transform: show ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.96)',
-        transition: 'all 0.45s cubic-bezier(0.34, 1.5, 0.64, 1)',
-        textAlign: 'center', padding: '0 24px', maxWidth: 420, width: '100%',
+        position: 'absolute', bottom: '5%', left: 0, right: 0,
+        display: 'flex', justifyContent: 'center',
       }}>
-
-        {/* Pigeons icon */}
-        <div style={{ fontSize: 64, marginBottom: 8, lineHeight: 1 }}>🕊️💥🕊️</div>
-
-        {/* Title */}
-        <div style={{ color: '#ffffff', fontSize: 'clamp(26px, 6vw, 38px)', fontWeight: 'bold', letterSpacing: 3, textShadow: '0 0 30px rgba(100,180,255,0.8)', marginBottom: 4 }}>
-          PIGEON HUNTER
-        </div>
-        <div style={{ color: '#80c8ff', fontSize: 'clamp(14px, 3vw, 18px)', letterSpacing: 5, marginBottom: 28 }}>
-          F R A N K F U R T
-        </div>
-
-        {/* Clemens tagline */}
-        <div style={{
-          background: 'rgba(255,255,255,0.08)',
-          border: '1px solid rgba(255,255,255,0.18)',
-          borderRadius: 10, padding: '10px 20px', marginBottom: 32,
-          color: 'rgba(200,220,255,0.85)', fontSize: 14, lineHeight: 1.5,
-        }}>
-          🕵️ <strong style={{ color: 'white' }}>Clemens</strong> braucht deine Hilfe!<br />
-          <span style={{ fontSize: 12, opacity: 0.75 }}>Die Psycho-Tauben haben Frankfurt im Griff.</span>
-        </div>
-
-        {/* Controls hint */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginBottom: 32 }}>
-          {[['🖱️', 'Maus / Finger', 'Zielen'], ['🖱️', 'Klick / Tap', 'Schießen']].map(([icon, input, action]) => (
-            <div key={action} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 22 }}>{icon}</div>
-              <div style={{ color: '#80c8ff', fontSize: 10, marginTop: 2 }}>{input}</div>
-              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 9 }}>{action}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Start button */}
         <button
           onClick={onStart}
           style={{
-            width: '100%', padding: '16px',
-            background: 'linear-gradient(135deg, #e63232, #a01818)',
-            border: '2px solid rgba(255,100,100,0.7)',
-            borderRadius: 12, color: 'white',
-            fontSize: 'clamp(14px, 3vw, 18px)',
+            padding: '16px 52px',
+            background: 'linear-gradient(135deg, #e63222, #9e1010)',
+            border: '2px solid rgba(255,100,80,0.8)',
+            borderRadius: 14, color: 'white',
+            fontSize: 'clamp(15px, 3.5vw, 22px)',
             fontWeight: 'bold', letterSpacing: 4,
-            fontFamily: 'monospace', cursor: 'pointer',
-            boxShadow: '0 0 30px rgba(220,50,50,0.45)',
+            fontFamily: 'impact, monospace', cursor: 'pointer',
+            boxShadow: '0 0 40px rgba(230,50,30,0.65), 0 4px 20px rgba(0,0,0,0.55)',
             transition: 'transform 0.12s, box-shadow 0.12s',
+            textTransform: 'uppercase',
           }}
-          onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.03)'; e.currentTarget.style.boxShadow = '0 0 40px rgba(220,50,50,0.65)'; }}
-          onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 0 30px rgba(220,50,50,0.45)'; }}
+          onMouseOver={e => {
+            e.currentTarget.style.transform = 'scale(1.06)';
+            e.currentTarget.style.boxShadow = '0 0 65px rgba(230,50,30,0.9), 0 4px 25px rgba(0,0,0,0.6)';
+          }}
+          onMouseOut={e => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.boxShadow = '0 0 40px rgba(230,50,30,0.65), 0 4px 20px rgba(0,0,0,0.55)';
+          }}
         >
-          🔫 JETZT JAGEN
+          JETZT TAUBEN JAGEN
         </button>
-
-        <div style={{ marginTop: 14, color: 'rgba(150,180,220,0.45)', fontSize: 10, letterSpacing: 1 }}>
-          📱 Querformat empfohlen auf dem Handy
-        </div>
       </div>
     </div>
   );

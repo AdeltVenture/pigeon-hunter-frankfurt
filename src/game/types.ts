@@ -1,4 +1,4 @@
-export type BehaviorType = 'drifter' | 'zigzagger' | 'diver' | 'circler';
+export type BehaviorType = 'drifter' | 'zigzagger' | 'diver' | 'circler' | 'kamikaze' | 'strafe' | 'swoop' | 'boomerang';
 export type PigeonState = 'flying' | 'diving' | 'hit' | 'dead';
 
 export interface Pigeon {

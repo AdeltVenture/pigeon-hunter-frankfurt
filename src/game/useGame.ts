@@ -1,87 +1,78 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { RefObject } from 'react';
 import type { Pigeon, ShotEffect, Particle, HUDState, BehaviorType } from './types';
-import { renderBackground, renderPigeon, renderEffect, renderCrosshair, renderHUD } from './renderer';
+import { renderBackground, renderGunBarrel, renderPigeon, renderEffect, renderCrosshair, renderHUD } from './renderer';
 import { playShot, playHit, playMiss, playWaveStart } from './sounds';
 
-// ─── Internal state ───────────────────────────────────────────────────────────
-
 interface GameInternal {
-  crosshairX: number;
-  crosshairY: number;
-  shootPressed: boolean;
-  shootCooldown: number;
-  score: number;
-  wave: number;
-  health: number;
-  pigeons: Pigeon[];
-  effects: ShotEffect[];
-  nextId: number;
-  waveSpawned: number;
-  waveTarget: number;
-  spawnTimer: number;
-  betweenWaves: boolean;
-  betweenWavesTimer: number;
-  waveMessage: string;
-  waveMessageTimer: number;
-  startTime: number;
-  lastFrameTime: number;
-  elapsed: number;
-  phase: 'playing' | 'gameover';
-  gameoverTimer: number;
+  crosshairX: number; crosshairY: number;
+  shootPressed: boolean; shootCooldown: number;
+  score: number; wave: number; health: number;
+  pigeons: Pigeon[]; effects: ShotEffect[]; nextId: number;
+  waveSpawned: number; waveTarget: number; spawnTimer: number;
+  betweenWaves: boolean; betweenWavesTimer: number;
+  waveMessage: string; waveMessageTimer: number;
+  startTime: number; lastFrameTime: number; elapsed: number;
+  phase: 'playing' | 'gameover'; gameoverTimer: number;
+  shotFlash: number;
 }
 
-const SHOOT_COOLDOWN = 0.15;
+const SHOOT_COOLDOWN = 0.14;
 const BETWEEN_WAVES_DELAY = 3.0;
 const WAVE_MSG_DURATION = 2.2;
 const HUD_INTERVAL = 80;
 
-// ─── Pigeon factory ───────────────────────────────────────────────────────────
-
 let _pid = 0;
 
 function spawnPigeon(wave: number, isBoss: boolean, W: number): Pigeon {
-  const psycho = Math.min(0.95, 0.08 + wave * 0.055 + Math.random() * 0.28);
-  const behaviors: BehaviorType[] = ['drifter', 'zigzagger', 'diver', 'circler'];
-  const weights = [0.40, 0.30, 0.20, 0.10];
-  let r = Math.random();
+  const psycho = Math.min(0.95, 0.10 + wave * 0.06 + Math.random() * 0.28);
+
+  // Wave-scaled behavior weights — more aggressive types at higher waves
+  const allBehaviors: BehaviorType[] = ['drifter', 'zigzagger', 'diver', 'circler', 'strafe', 'swoop', 'boomerang', 'kamikaze'];
+  const w = Math.min(wave, 8);
+  const weights = [
+    Math.max(0.05, 0.35 - w * 0.04),  // drifter
+    Math.max(0.08, 0.25 - w * 0.02),  // zigzagger
+    0.10,                               // diver
+    0.08,                               // circler
+    Math.min(0.20, w * 0.025),         // strafe
+    Math.min(0.18, w * 0.022),         // swoop
+    Math.min(0.15, w * 0.018),         // boomerang
+    Math.min(0.12, Math.max(0, (w - 3) * 0.030)), // kamikaze (wave 4+)
+  ];
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
   let behavior: BehaviorType = 'drifter';
-  for (let i = 0; i < behaviors.length; i++) {
-    if (r < weights[i]) { behavior = behaviors[i]; break; }
+  for (let i = 0; i < allBehaviors.length; i++) {
+    if (r < weights[i]) { behavior = allBehaviors[i]; break; }
     r -= weights[i];
   }
 
-  // Spawn within visible screen width, from the sides
   const side = Math.random() < 0.5 ? -1 : 1;
   const worldX = side * (W * 0.3 + Math.random() * W * 0.18);
 
   return {
     id: ++_pid,
     worldX,
-    normalY: 0.02 + Math.random() * 0.08,
+    normalY: 0.02 + Math.random() * 0.06,
     scale: 0.42,
     vx: 0,
-    vy: 0.016 + psycho * 0.022 + Math.random() * 0.012,
+    vy: 0.018 + psycho * 0.025 + Math.random() * 0.014,
     state: 'flying',
-    hitTimer: 0,
-    deadTimer: 0.8,
+    hitTimer: 0, deadTimer: 0.8,
     wingPhase: Math.random() * Math.PI * 2,
-    wingSpeed: 5 + psycho * 5 + Math.random() * 3,
-    rotation: 0,
-    psycho,
+    wingSpeed: 6 + psycho * 6 + Math.random() * 3,
+    rotation: 0, psycho,
     zigPhase: Math.random() * Math.PI * 2,
-    health: isBoss ? 3 : 1,
-    maxHealth: isBoss ? 3 : 1,
+    health: isBoss ? 3 : 1, maxHealth: isBoss ? 3 : 1,
     isBoss,
     behavior: isBoss ? 'circler' : behavior,
   };
 }
 
-// ─── Pigeon update ────────────────────────────────────────────────────────────
-
-function updatePigeon(p: Pigeon, dt: number, W: number): boolean {
+function updatePigeon(p: Pigeon, dt: number, W: number, _H: number, cxWorldX: number, cxNormY: number): boolean {
   p.wingPhase += p.wingSpeed * dt;
-  p.zigPhase += 2.0 * dt;
+  p.zigPhase += 2.2 * dt;
 
   if (p.state === 'hit') {
     p.hitTimer -= dt;
@@ -92,36 +83,90 @@ function updatePigeon(p: Pigeon, dt: number, W: number): boolean {
   }
   if (p.state === 'dead') {
     p.deadTimer -= dt;
-    p.normalY += 0.18 * dt; // fall down
-    p.rotation += 8 * dt;
+    p.normalY += 0.22 * dt;
+    p.rotation += 10 * dt;
     return p.deadTimer > 0;
   }
 
-  const speed = 1 + p.psycho * 1.4;
+  const speed = 1.2 + p.psycho * 1.8;
+
   switch (p.behavior) {
     case 'drifter':
-      p.vx = Math.sin(p.zigPhase * 0.55) * 110 * speed;
+      // Occasional speed burst
+      p.vx = Math.sin(p.zigPhase * 0.55) * 120 * speed;
+      if (Math.sin(p.zigPhase * 0.3) > 0.85) p.vx *= 2.2;
       break;
+
     case 'zigzagger':
-      p.vx = Math.sin(p.zigPhase * 2.0) * 200 * speed;
+      // Sharp high-frequency zig-zag with random reversals
+      p.vx = Math.sin(p.zigPhase * 2.8) * 240 * speed;
+      if (Math.abs(Math.sin(p.zigPhase * 1.4)) > 0.92) p.vx *= -2;
       break;
+
     case 'diver':
-      if (p.normalY > 0.32) {
-        p.vx += (-p.worldX * 0.9 - p.vx) * dt * 3;
-        p.vy = Math.min(0.42, p.vy + 0.07 * dt);
+      if (p.normalY > 0.28) {
+        p.vx += (-p.worldX * 1.1 - p.vx) * dt * 3.5;
+        p.vy = Math.min(0.52, p.vy + 0.09 * dt);
       } else {
-        p.vx = Math.sin(p.zigPhase * 0.8) * 160 * speed;
+        p.vx = Math.sin(p.zigPhase * 1.0) * 180 * speed;
       }
       break;
+
     case 'circler':
-      p.vx = Math.cos(p.zigPhase * 0.65) * (p.isBoss ? 260 : 180) * speed;
-      p.vy = 0.010 + Math.sin(p.zigPhase * 0.65) * 0.011;
+      p.vx = Math.cos(p.zigPhase * 0.7) * (p.isBoss ? 280 : 200) * speed;
+      p.vy = 0.012 + Math.sin(p.zigPhase * 0.7) * 0.014;
       break;
+
+    case 'kamikaze': {
+      // Locks onto crosshair and accelerates toward it aggressively
+      const toDx = cxWorldX - p.worldX;
+      const normDist = Math.hypot(toDx, (cxNormY - p.normalY) * W);
+      if (normDist > 5) {
+        const accel = 420 * speed;
+        p.vx += (toDx / normDist) * accel * dt;
+        const dyNorm = cxNormY - p.normalY;
+        p.vy += (dyNorm > 0 ? 1 : -0.3) * 0.08 * dt;
+      }
+      // Speed cap
+      const spd = Math.abs(p.vx);
+      if (spd > 480) p.vx *= 480 / spd;
+      p.vy = Math.min(0.55, Math.max(0.005, p.vy));
+      // Occasional fake-out: reverse direction briefly
+      if (Math.sin(p.zigPhase * 0.8) > 0.97) p.vx *= -0.6;
+      break;
+    }
+
+    case 'strafe':
+      // Very rapid, erratic sideways bursts — hard to track
+      p.vx = Math.sign(Math.sin(p.zigPhase * 3.5)) * 280 * speed;
+      if (Math.random() < 0.015) p.vx *= -1.5; // sudden snap reversal
+      p.vy = 0.010 + Math.abs(Math.sin(p.zigPhase * 1.8)) * 0.018;
+      break;
+
+    case 'swoop': {
+      // Fast horizontal movement + rhythmic vertical dips (swoop pattern)
+      const swoopDir = Math.sin(p.zigPhase * 0.4) > 0 ? 1 : -1;
+      p.vx = swoopDir * 220 * speed;
+      // Swoop down then up repeatedly
+      p.vy = 0.035 + Math.sin(p.zigPhase * 1.5) * 0.030;
+      if (p.normalY > 0.55) p.vy = -0.02; // pull up when too low
+      if (p.normalY < 0.05) p.vy = Math.max(p.vy, 0.015); // don't go off top
+      break;
+    }
+
+    case 'boomerang': {
+      // Flies hard in one direction, then snaps back — surprise attack
+      const dir = Math.cos(p.zigPhase * 0.45) > 0 ? 1 : -1;
+      p.vx = dir * 310 * speed;
+      // Accelerates toward center when far out
+      if (Math.abs(p.worldX) > W * 0.38) p.vx *= -1.4;
+      break;
+    }
   }
 
   p.worldX += p.vx * dt;
   p.normalY += p.vy * dt;
-  p.scale = 0.42 + p.normalY * 1.55; // bigger base scale
+  p.scale = 0.42 + p.normalY * 1.55;
 
   // Bounce at screen edges
   const halfW = W * 0.50;
@@ -130,26 +175,25 @@ function updatePigeon(p: Pigeon, dt: number, W: number): boolean {
     p.vx *= -1;
   }
 
-  // Rotation toward movement
   p.rotation += (Math.atan2(p.vy * 35, p.vx) * 0.12 - p.rotation) * dt * 4;
 
-  // Transition to diving when close
-  if (p.behavior !== 'diver' && p.normalY > 0.52 && Math.random() < 0.007) {
+  // Any non-diver can transition to dive when low
+  if (p.behavior !== 'diver' && p.behavior !== 'kamikaze' && p.normalY > 0.55 && Math.random() < 0.006) {
     p.behavior = 'diver';
-    p.vy = Math.max(p.vy, 0.28);
+    p.vy = Math.max(p.vy, 0.30);
   }
 
   return true;
 }
 
-// ─── Score ────────────────────────────────────────────────────────────────────
-
 function calcScore(pigeon: Pigeon): number {
   const base = pigeon.isBoss ? 500 : 100;
-  return base + Math.floor(pigeon.psycho * 80) + (pigeon.behavior === 'zigzagger' ? 50 : 0);
+  const behaviorBonus: Record<BehaviorType, number> = {
+    drifter: 0, diver: 20, circler: 30, zigzagger: 50,
+    strafe: 60, swoop: 55, boomerang: 70, kamikaze: 90,
+  };
+  return base + Math.floor(pigeon.psycho * 80) + (behaviorBonus[pigeon.behavior] ?? 0);
 }
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 const INIT_HUD: HUDState = { score: 0, wave: 1, health: 3, waveMessage: '', phase: 'playing' };
 
@@ -160,14 +204,13 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
   const hudTimer = useRef<number>(0);
   const sizeRef = useRef({ W: 0, H: 0 });
 
-  // ── Shoot ────────────────────────────────────────────────────────────────
-
   const tryShoot = useCallback(() => {
     const s = stateRef.current;
     if (!s || s.phase !== 'playing') return;
     if (s.shootCooldown > 0) return;
 
     s.shootCooldown = SHOOT_COOLDOWN;
+    s.shotFlash = 1.0;
     playShot();
 
     const { W, H } = sizeRef.current;
@@ -204,15 +247,13 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
             return {
               x: px, y: py,
               vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd - 40,
-              decay: 1.6 + Math.random() * 1.4,
-              life: 1,
+              decay: 1.6 + Math.random() * 1.4, life: 1,
               size: 4 + Math.random() * 6,
               color: Math.random() < 0.55 ? '#c8c0b0' : (Math.random() < 0.5 ? '#cc2200' : '#f0e060'),
             } as Particle;
           }),
         });
       } else {
-        // Boss partial hit
         playHit();
         const px = hit.worldX + W / 2;
         const py = hit.normalY * H * 0.70;
@@ -223,8 +264,6 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
       s.effects.push({ id: s.nextId++, x: cx, y: cy, isHit: false, timer: 0.45, particles: [] });
     }
   }, []);
-
-  // ── Game loop ────────────────────────────────────────────────────────────
 
   const loop = useCallback((ts: number) => {
     const s = stateRef.current;
@@ -238,14 +277,16 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const ctx = canvas.getContext('2d')!;
     const { W, H } = sizeRef.current;
 
-    // ── Update ─────────────────────────────────────────────────────────────
-
     s.shootCooldown = Math.max(0, s.shootCooldown - dt);
+    s.shotFlash = Math.max(0, s.shotFlash - dt * 5);
     if (s.shootPressed && s.shootCooldown === 0) tryShoot();
 
-    // Pigeons
+    // Crosshair world coords for kamikaze tracking
+    const cxWorldX = s.crosshairX - W / 2;
+    const cxNormY = s.crosshairY / (H * 0.70);
+
     s.pigeons = s.pigeons.filter(p => {
-      const alive = updatePigeon(p, dt, W);
+      const alive = updatePigeon(p, dt, W, H, cxWorldX, cxNormY);
       if (alive && p.normalY > 0.96 && (p.state === 'flying' || p.state === 'diving')) {
         p.state = 'dead';
         s.health = Math.max(0, s.health - 1);
@@ -255,7 +296,6 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
       return alive;
     });
 
-    // Effects
     s.effects = s.effects.filter(e => {
       e.timer -= dt;
       e.particles.forEach(p => {
@@ -267,13 +307,11 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
       return e.timer > 0 || e.particles.length > 0;
     });
 
-    // Wave message
     if (s.waveMessageTimer > 0) {
       s.waveMessageTimer -= dt;
       if (s.waveMessageTimer <= 0) s.waveMessage = '';
     }
 
-    // Wave spawning
     if (!s.betweenWaves && s.phase === 'playing') {
       s.spawnTimer -= dt;
       const alive = s.pigeons.filter(p => p.state !== 'dead').length;
@@ -281,7 +319,7 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
         const isBoss = s.wave % 5 === 0 && s.waveSpawned === 0;
         s.pigeons.push(spawnPigeon(s.wave, isBoss, W));
         s.waveSpawned++;
-        s.spawnTimer = Math.max(0.45, 2.0 - s.wave * 0.09);
+        s.spawnTimer = Math.max(0.40, 1.8 - s.wave * 0.08);
       }
       if (s.waveSpawned >= s.waveTarget && alive === 0) {
         s.betweenWaves = true;
@@ -304,8 +342,7 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
 
     if (s.phase === 'gameover') s.gameoverTimer -= dt;
 
-    // ── Render ─────────────────────────────────────────────────────────────
-
+    // ── Render ──────────────────────────────────────────────────────────────
     ctx.clearRect(0, 0, W, H);
     renderBackground(ctx, W, H, s.elapsed);
 
@@ -314,10 +351,13 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
       renderPigeon(ctx, p, p.worldX + W / 2, p.normalY * H * 0.70);
     }
     for (const e of s.effects) renderEffect(ctx, e);
+
+    // Gun barrel (FPS view) — drawn over pigeons, under crosshair
+    renderGunBarrel(ctx, W, H, s.shotFlash, s.crosshairX, s.crosshairY);
+
     if (s.phase === 'playing') renderCrosshair(ctx, s.crosshairX, s.crosshairY);
     renderHUD(ctx, W, H, { score: s.score, wave: s.wave, health: s.health, waveMessage: s.waveMessage, phase: s.phase });
 
-    // Throttled React state update
     const now = Date.now();
     if (now - hudTimer.current > HUD_INTERVAL) {
       hudTimer.current = now;
@@ -330,8 +370,6 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
       setHud(prev => ({ ...prev, phase: 'gameover' }));
     }
   }, [canvasRef, tryShoot]);
-
-  // ── Resize ───────────────────────────────────────────────────────────────
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -352,8 +390,6 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
     }
   }, [canvasRef]);
 
-  // ── Start ────────────────────────────────────────────────────────────────
-
   const startGame = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -367,9 +403,10 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
       pigeons: [], effects: [], nextId: 1,
       waveSpawned: 0, waveTarget: 5, spawnTimer: 0.8,
       betweenWaves: false, betweenWavesTimer: 0,
-      waveMessage: 'LOS GEHT\'S!', waveMessageTimer: 2.2,
+      waveMessage: "LOS GEHT'S!", waveMessageTimer: 2.2,
       startTime: now, lastFrameTime: now, elapsed: 0,
       phase: 'playing', gameoverTimer: 1.5,
+      shotFlash: 0,
     };
     setHud(INIT_HUD);
     cancelAnimationFrame(rafRef.current);
@@ -380,8 +417,6 @@ export function useGame(canvasRef: RefObject<HTMLCanvasElement | null>) {
     window.addEventListener('resize', handleResize);
     return () => { window.removeEventListener('resize', handleResize); cancelAnimationFrame(rafRef.current); };
   }, [handleResize]);
-
-  // ── Input handlers ───────────────────────────────────────────────────────
 
   const onAimMove = useCallback((x: number, y: number) => {
     if (stateRef.current) { stateRef.current.crosshairX = x; stateRef.current.crosshairY = y; }

@@ -14,18 +14,6 @@ interface BuildingDef {
   windows: boolean;
 }
 
-const FAR_BUILDINGS: BuildingDef[] = [
-  { cx: 0.38, w: 0.030, h: 0.88, type: 'triangle_top', windows: false }, // Commerzbank
-  { cx: 0.22, w: 0.036, h: 0.72, type: 'pyramid',      windows: false }, // Messeturm
-  { cx: 0.54, w: 0.026, h: 0.82, type: 'cylinder',     windows: false }, // Main Tower
-  { cx: 0.64, w: 0.058, h: 0.66, type: 'twin',         windows: false }, // Westend Gate
-  { cx: 0.12, w: 0.024, h: 0.54, type: 'stepped',      windows: false },
-  { cx: 0.74, w: 0.028, h: 0.60, type: 'triangle_top', windows: false },
-  { cx: 0.84, w: 0.020, h: 0.48, type: 'rect',         windows: false },
-  { cx: 0.06, w: 0.028, h: 0.46, type: 'rect',         windows: false },
-  { cx: 0.92, w: 0.022, h: 0.42, type: 'rect',         windows: false },
-  { cx: 0.47, w: 0.018, h: 0.38, type: 'rect',         windows: false },
-];
 
 const MID_BUILDINGS: BuildingDef[] = [
   { cx: 0.07, w: 0.10, h: 0.42, type: 'rect',    windows: true },
@@ -151,19 +139,31 @@ function renderSky(ctx: CanvasRenderingContext2D, W: number, skyH: number, t: nu
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, skyH);
 
-  // Sun glow (top-right area)
-  const sunGlow = ctx.createRadialGradient(W * 0.82, skyH * 0.08, 0, W * 0.82, skyH * 0.08, skyH * 0.45);
-  sunGlow.addColorStop(0, 'rgba(255, 245, 180, 0.55)');
-  sunGlow.addColorStop(0.4, 'rgba(255, 220, 100, 0.20)');
-  sunGlow.addColorStop(1, 'rgba(255, 200, 50, 0)');
+  // Sun glow (top-LEFT — like Frankfurt Mainufer photo from Sachsenhausen)
+  const sunGlow = ctx.createRadialGradient(W * 0.11, skyH * 0.06, 0, W * 0.11, skyH * 0.06, skyH * 0.58);
+  sunGlow.addColorStop(0,   'rgba(255, 255, 220, 0.72)');
+  sunGlow.addColorStop(0.18,'rgba(255, 238, 140, 0.38)');
+  sunGlow.addColorStop(0.45,'rgba(255, 210, 80,  0.16)');
+  sunGlow.addColorStop(1,   'rgba(255, 200, 50,  0)');
   ctx.fillStyle = sunGlow;
   ctx.fillRect(0, 0, W, skyH);
 
   // Sun disc
-  ctx.fillStyle = 'rgba(255, 252, 200, 0.95)';
-  ctx.beginPath();
-  ctx.arc(W * 0.82, skyH * 0.10, skyH * 0.055, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 230, 0.98)';
+  ctx.beginPath(); ctx.arc(W * 0.11, skyH * 0.08, skyH * 0.058, 0, Math.PI * 2); ctx.fill();
+  // Subtle sun rays
+  ctx.strokeStyle = 'rgba(255,248,180,0.28)';
+  ctx.lineWidth = skyH * 0.014;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + t * 0.04;
+    const r1 = skyH * 0.08; const r2 = skyH * 0.20;
+    ctx.beginPath();
+    ctx.moveTo(W * 0.11 + Math.cos(a) * r1, skyH * 0.08 + Math.sin(a) * r1);
+    ctx.lineTo(W * 0.11 + Math.cos(a) * r2, skyH * 0.08 + Math.sin(a) * r2);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
 
   // Clouds (slowly drifting)
   CLOUD_DEFS.forEach(c => {
@@ -172,118 +172,383 @@ function renderSky(ctx: CanvasRenderingContext2D, W: number, skyH: number, t: nu
   });
 }
 
-// ─── Street ───────────────────────────────────────────────────────────────────
+// ─── Mainufer (Frankfurt riverside meadow) ────────────────────────────────────
 
-function renderStreet(ctx: CanvasRenderingContext2D, W: number, H: number, skyH: number) {
+function renderMainufer(ctx: CanvasRenderingContext2D, W: number, H: number, skyH: number) {
   const sh = H - skyH;
-  const vp = W / 2;
 
-  // Street canyon side walls
-  ctx.fillStyle = '#b8a888';
-  ctx.fillRect(0, skyH, W * 0.13, sh);
-  ctx.fillRect(W * 0.87, skyH, W * 0.13, sh);
+  // Base: lush green meadow
+  const meadow = ctx.createLinearGradient(0, skyH, 0, H);
+  meadow.addColorStop(0, '#5aaa40');
+  meadow.addColorStop(0.38, '#4a9a32');
+  meadow.addColorStop(0.68, '#3a8828');
+  meadow.addColorStop(1, '#2a6818');
+  ctx.fillStyle = meadow;
+  ctx.fillRect(0, skyH, W, sh);
 
-  // Light sunlit stripe on right wall
-  ctx.fillStyle = 'rgba(255, 240, 200, 0.25)';
-  ctx.fillRect(W * 0.87, skyH, W * 0.04, sh);
-
-  // Asphalt — lighter grey
-  const asp = ctx.createLinearGradient(0, skyH, 0, H);
-  asp.addColorStop(0, '#9a9890');
-  asp.addColorStop(0.4, '#808078');
-  asp.addColorStop(1, '#606058');
-  ctx.fillStyle = asp;
-  ctx.fillRect(W * 0.13, skyH, W * 0.74, sh);
-
-  // Sidewalks
-  ctx.fillStyle = '#c0b8a8';
-  ctx.fillRect(W * 0.13, skyH, W * 0.06, sh);
-  ctx.fillRect(W * 0.81, skyH, W * 0.06, sh);
-
-  // Perspective lines
-  ctx.strokeStyle = 'rgba(80,75,65,0.5)';
-  ctx.lineWidth = 1.5;
-  [[W * 0.19], [W * 0.81]].forEach(([x]) => {
-    ctx.beginPath(); ctx.moveTo(x, skyH); ctx.lineTo(vp, skyH + sh * 0.3); ctx.stroke();
+  // Far tree band — 3 depth layers across full width
+  const treeLayers = [
+    { n: 18, yOff: 2, hScale: 0.42, rScale: 0.08, col: '#3a6a28' },
+    { n: 14, yOff: 5, hScale: 0.35, rScale: 0.07, col: '#4a8830' },
+    { n: 11, yOff: 8, hScale: 0.28, rScale: 0.06, col: '#6aaa48' },
+  ];
+  treeLayers.forEach(({ n, yOff, hScale, rScale, col }) => {
+    ctx.fillStyle = col;
+    for (let i = 0; i < n; i++) {
+      const tx = (i / (n - 1)) * W;
+      const th = sh * (hScale + Math.sin(i * 2.7 + n) * 0.06);
+      const tr = sh * (rScale + Math.sin(i * 3.1 + n) * 0.015);
+      ctx.beginPath();
+      ctx.ellipse(tx, skyH + yOff, tr * 1.4, th * 0.38, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 
-  // White dashes
-  ctx.strokeStyle = 'rgba(240,238,220,0.7)';
-  ctx.lineWidth = 2.5;
-  ctx.setLineDash([W * 0.025, W * 0.025]);
-  ctx.beginPath(); ctx.moveTo(vp, skyH + sh * 0.08); ctx.lineTo(vp, H); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Trees along sidewalk
-  renderTrees(ctx, W, H, skyH, sh);
-
-  // Streetlights
-  renderStreetlight(ctx, W * 0.17, skyH, sh * 0.52, true);
-  renderStreetlight(ctx, W * 0.83, skyH, sh * 0.52, false);
-}
-
-function renderTrees(ctx: CanvasRenderingContext2D, W: number, _H: number, skyH: number, sh: number) {
-  const positions = [0.135, 0.175, 0.83, 0.87];
-  positions.forEach((xf, i) => {
-    const x = xf * W;
-    const trunkH = sh * 0.45;
-    const trunkY = skyH + sh * 0.35;
-    const crownR = sh * 0.20;
-    const crownY = skyH + sh * 0.28;
-
-    // Shadow on ground
-    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  // Main river strip
+  const riverY = skyH + sh * 0.30;
+  const riverH = sh * 0.17;
+  const riverGrad = ctx.createLinearGradient(0, riverY, 0, riverY + riverH);
+  riverGrad.addColorStop(0, '#7aacca');
+  riverGrad.addColorStop(0.45, '#8ab8d4');
+  riverGrad.addColorStop(1, '#5e8ead');
+  ctx.fillStyle = riverGrad;
+  ctx.fillRect(0, riverY, W, riverH);
+  // Shimmer
+  ctx.strokeStyle = 'rgba(200,235,255,0.32)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 7; i++) {
+    const ly = riverY + riverH * (0.18 + i * 0.11);
+    const lx = W * (0.04 + i * 0.09);
     ctx.beginPath();
-    ctx.ellipse(x + sh * 0.04, skyH + sh * 0.78, crownR * 0.65, crownR * 0.18, 0, 0, Math.PI * 2);
+    ctx.moveTo(lx, ly);
+    ctx.lineTo(lx + W * (0.06 + Math.sin(i * 1.9) * 0.025), ly + 1);
+    ctx.stroke();
+  }
+
+  // Eiserner Steg bridge silhouette
+  const bridgeY = riverY + riverH * 0.10;
+  const bridgeH = riverH * 0.52;
+  ctx.strokeStyle = '#6a7860';
+  ctx.fillStyle = '#6a7860';
+  // Bridge deck
+  ctx.fillRect(0, bridgeY + bridgeH, W, 4);
+  // Truss arches
+  const nTruss = 9;
+  for (let i = 0; i < nTruss; i++) {
+    const tx = (i / nTruss) * W;
+    const tw = W / nTruss;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(tx, bridgeY + bridgeH);
+    ctx.quadraticCurveTo(tx + tw / 2, bridgeY, tx + tw, bridgeY + bridgeH);
+    ctx.stroke();
+    ctx.lineWidth = 1.2;
+    for (let j = 1; j < 4; j++) {
+      const sx = tx + (j / 4) * tw;
+      const arcY = bridgeY + bridgeH - bridgeH * Math.sin((j / 4) * Math.PI);
+      ctx.beginPath(); ctx.moveTo(sx, bridgeY + bridgeH); ctx.lineTo(sx, arcY); ctx.stroke();
+    }
+  }
+  // Handrail
+  ctx.fillStyle = '#7a8870';
+  ctx.fillRect(0, bridgeY, W, 2.5);
+
+  // Embankment path (Sachsenhäuser Ufer)
+  const pathY = riverY - sh * 0.038;
+  ctx.fillStyle = '#c8bc98';
+  ctx.fillRect(0, pathY, W, sh * 0.060);
+  ctx.fillStyle = 'rgba(180,168,138,0.28)';
+  for (let i = 0; i < 14; i++) {
+    ctx.fillRect(i * W / 14, pathY + 2, W / 14 - 2, 3);
+  }
+
+  // Grass fringe at embankment top
+  ctx.strokeStyle = '#78c058';
+  ctx.lineWidth = 1.6;
+  for (let i = 0; i < 60; i++) {
+    const gx = (i / 59) * W;
+    const gh = sh * (0.028 + Math.sin(i * 7.1) * 0.010);
+    ctx.beginPath();
+    ctx.moveTo(gx, pathY);
+    ctx.quadraticCurveTo(gx + Math.sin(i * 2.3) * 3, pathY - gh * 0.55, gx + Math.sin(i * 1.5) * 2, pathY - gh);
+    ctx.stroke();
+  }
+
+  // Foreground trees (large, close-up)
+  const fgPos = [0.07, 0.20, 0.80, 0.93];
+  fgPos.forEach((xf, i) => {
+    const x = xf * W;
+    const crownR = sh * 0.30;
+    const trunkH = sh * 0.36;
+    const baseY = H;
+    const trunkY = baseY - trunkH;
+    const crownY = trunkY - crownR * 0.50;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.ellipse(x + sh * 0.025, baseY - sh * 0.015, crownR * 0.72, crownR * 0.15, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Trunk
-    ctx.fillStyle = '#6b4a2a';
-    ctx.fillRect(x - 4, trunkY, 8, trunkH);
+    ctx.fillStyle = '#5a3818';
+    ctx.fillRect(x - 7, trunkY, 14, trunkH);
+    ctx.fillStyle = 'rgba(130,90,50,0.38)';
+    ctx.fillRect(x - 2, trunkY, 5, trunkH);
 
-    // Crown layers (depth effect)
-    ctx.fillStyle = '#2e6e1a';
-    ctx.beginPath(); ctx.ellipse(x + 3, crownY + 4, crownR * 1.0, crownR * 0.90, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#3a8a22';
-    ctx.beginPath(); ctx.ellipse(x - 4, crownY, crownR * 0.80, crownR * 0.78, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#4aa02a';
-    ctx.beginPath(); ctx.ellipse(x + (i % 2 === 0 ? -2 : 2), crownY - crownR * 0.2, crownR * 0.68, crownR * 0.65, 0, 0, Math.PI * 2); ctx.fill();
+    // Crown depth layers
+    ctx.fillStyle = '#2a5e18';
+    ctx.beginPath(); ctx.ellipse(x + 5, crownY + 7, crownR, crownR * 0.88, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a7822';
+    ctx.beginPath(); ctx.ellipse(x - 6, crownY, crownR * 0.84, crownR * 0.80, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a9030';
+    ctx.beginPath(); ctx.ellipse(x + (i % 2 === 0 ? -4 : 4), crownY - crownR * 0.16, crownR * 0.70, crownR * 0.68, 0, 0, Math.PI * 2); ctx.fill();
 
-    // Sunlit highlight
-    ctx.fillStyle = 'rgba(100, 200, 60, 0.35)';
-    ctx.beginPath(); ctx.ellipse(x + crownR * 0.3, crownY - crownR * 0.15, crownR * 0.38, crownR * 0.35, 0.4, 0, Math.PI * 2); ctx.fill();
+    // Sun highlight on left trees (sun is top-left)
+    if (i < 2) {
+      ctx.fillStyle = 'rgba(120,210,70,0.30)';
+      ctx.beginPath(); ctx.ellipse(x - crownR * 0.22, crownY - crownR * 0.20, crownR * 0.42, crownR * 0.36, -0.3, 0, Math.PI * 2); ctx.fill();
+    }
   });
-}
-
-function renderStreetlight(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, right: boolean) {
-  const dir = right ? 1 : -1;
-  ctx.fillStyle = '#6a6858';
-  ctx.fillRect(x - 2, y, 4, h * 0.60);
-  ctx.fillRect(x - 2, y + 3, dir * h * 0.13, 3);
-  ctx.fillStyle = '#e8e0c0';
-  ctx.fillRect(x + dir * (h * 0.13 - 6), y - 2, 12, 6);
 }
 
 // ─── Full background ──────────────────────────────────────────────────────────
 
+// ─── Frankfurt Landmark Functions ────────────────────────────────────────────
+
+function drawCommerzbank(ctx: CanvasRenderingContext2D, W: number, skyH: number) {
+  const cx = W * 0.42; const bh = skyH * 0.91;
+  const bw = Math.max(18, W * 0.025); const top = skyH - bh; const left = cx - bw / 2;
+  const gr = ctx.createLinearGradient(left, 0, left + bw, 0);
+  gr.addColorStop(0, '#4878a0'); gr.addColorStop(0.2, '#8ab8d4'); gr.addColorStop(0.5, '#72a8c8'); gr.addColorStop(1, '#3a6080');
+  ctx.fillStyle = gr;
+  ctx.fillRect(left, top + bh * 0.13, bw, bh * 0.87);
+  ctx.beginPath(); ctx.moveTo(left - 3, top + bh * 0.13); ctx.lineTo(cx, top); ctx.lineTo(left + bw + 3, top + bh * 0.13); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#6090b0'; ctx.fillRect(cx - 1, top - bh * 0.09, 2, bh * 0.09);
+  ctx.fillStyle = '#ff3300'; ctx.beginPath(); ctx.arc(cx, top - bh * 0.09, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(15,30,60,0.5)';
+  [0.36, 0.55, 0.73].forEach(yf => ctx.fillRect(left, top + bh * yf, bw, 4));
+  ctx.strokeStyle = 'rgba(40,70,120,0.22)'; ctx.lineWidth = 0.7;
+  for (let i = 2; i < 40; i++) { const fy = top + bh * 0.14 + (i / 40) * bh * 0.84; ctx.beginPath(); ctx.moveTo(left, fy); ctx.lineTo(left + bw, fy); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(180,230,255,0.16)'; ctx.fillRect(left + 2, top + bh * 0.13, bw * 0.28, bh * 0.86);
+}
+
+function drawMesseturm(ctx: CanvasRenderingContext2D, W: number, skyH: number) {
+  const cx = W * 0.17; const bh = skyH * 0.80;
+  const bw = Math.max(26, W * 0.040); const top = skyH - bh; const left = cx - bw / 2;
+  const gr = ctx.createLinearGradient(left, 0, left + bw, 0);
+  gr.addColorStop(0, '#5a3020'); gr.addColorStop(0.3, '#9a6038'); gr.addColorStop(0.7, '#8a5030'); gr.addColorStop(1, '#4a2818');
+  ctx.fillStyle = gr;
+  ctx.fillRect(left, top + bh * 0.23, bw, bh * 0.77);
+  ctx.beginPath(); ctx.moveTo(left - 5, top + bh * 0.23); ctx.lineTo(cx, top); ctx.lineTo(left + bw + 5, top + bh * 0.23); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3a2010'; ctx.beginPath(); ctx.arc(cx, top, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(35,15,8,0.28)';
+  for (let i = 1; i < 11; i++) ctx.fillRect(left, top + bh * 0.25 + (i / 11) * bh * 0.72, bw, 2.5);
+  const cols = 5; const rows = 11; const ww = (bw - 8) / (cols * 1.7); const wh = ww * 1.2;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    ctx.fillStyle = absPr(c * 7 + r * 13) > 0.38 ? 'rgba(190,150,100,0.55)' : 'rgba(45,22,10,0.55)';
+    ctx.fillRect(left + 4 + c * ww * 1.7, top + bh * 0.28 + r * wh * 2.3, ww, wh);
+  }
+}
+
+function drawMainTower(ctx: CanvasRenderingContext2D, W: number, skyH: number) {
+  const cx = W * 0.62; const bh = skyH * 0.86;
+  const bw = Math.max(20, W * 0.026); const top = skyH - bh; const left = cx - bw / 2;
+  const gr = ctx.createLinearGradient(left, 0, left + bw, 0);
+  gr.addColorStop(0, '#304860'); gr.addColorStop(0.15, '#5888b8'); gr.addColorStop(0.5, '#70a8d0'); gr.addColorStop(1, '#2a3a58');
+  ctx.fillStyle = gr;
+  ctx.fillRect(left, top + bh * 0.10, bw, bh * 0.90);
+  const cw = bw + 10; ctx.fillStyle = '#5080a0'; ctx.fillRect(cx - cw / 2, top, cw, bh * 0.10);
+  ctx.fillStyle = 'rgba(80,150,200,0.45)'; ctx.fillRect(cx - cw / 2, top + bh * 0.10 - 3, cw, 3);
+  ctx.fillStyle = 'rgba(140,210,255,0.38)';
+  for (let i = 0; i < 8; i++) ctx.fillRect(cx - cw / 2 + 3 + i * ((cw - 6) / 8), top + 2, (cw - 6) / 8 - 2, bh * 0.08 - 4);
+  ctx.fillStyle = '#5888a8'; ctx.fillRect(cx - 1, top - bh * 0.14, 2, bh * 0.14);
+  ctx.fillStyle = '#ff4400'; ctx.beginPath(); ctx.arc(cx, top - bh * 0.14, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(50,90,140,0.25)'; ctx.lineWidth = 0.7;
+  for (let i = 2; i < 34; i++) { const fy = top + bh * 0.11 + (i / 34) * bh * 0.87; ctx.beginPath(); ctx.moveTo(left, fy); ctx.lineTo(left + bw, fy); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(160,225,255,0.16)'; ctx.fillRect(left + 2, top + bh * 0.10, bw * 0.24, bh * 0.88);
+}
+
+function drawDeutscheBank(ctx: CanvasRenderingContext2D, W: number, skyH: number) {
+  const cx = W * 0.52; const bh = skyH * 0.64;
+  const tw = Math.max(14, W * 0.019); const gap = Math.max(5, W * 0.008); const top = skyH - bh;
+  [cx - gap / 2 - tw, cx + gap / 2].forEach((left, idx) => {
+    const gr = ctx.createLinearGradient(left, 0, left + tw, 0);
+    gr.addColorStop(0, '#283848'); gr.addColorStop(0.3, '#486070'); gr.addColorStop(1, '#182838');
+    ctx.fillStyle = gr; ctx.fillRect(left, top, tw, bh);
+    const ww = (tw - 4) / (3 * 1.7); const wh = ww;
+    for (let r = 0; r < 15; r++) for (let c = 0; c < 3; c++) {
+      ctx.fillStyle = absPr(c * 5 + r * 11 + idx * 50) > 0.42 ? 'rgba(120,185,225,0.48)' : 'rgba(18,32,50,0.6)';
+      ctx.fillRect(left + 2 + c * ww * 1.7, top + 8 + r * wh * 2.3, ww, wh);
+    }
+    ctx.fillStyle = 'rgba(100,175,220,0.13)'; ctx.fillRect(left + 2, top, tw * 0.26, bh);
+  });
+  ctx.fillStyle = '#304050'; ctx.fillRect(cx - gap / 2 - tw, top + bh * 0.40, tw * 2 + gap, 5);
+}
+
+function drawWestendTower(ctx: CanvasRenderingContext2D, W: number, skyH: number) {
+  const cx = W * 0.28; const bh = skyH * 0.74;
+  const bw = Math.max(20, W * 0.028); const top = skyH - bh; const left = cx - bw / 2;
+  const gr = ctx.createLinearGradient(left, 0, left + bw, 0);
+  gr.addColorStop(0, '#787870'); gr.addColorStop(0.3, '#b0aea6'); gr.addColorStop(1, '#686860');
+  ctx.fillStyle = gr; ctx.fillRect(left, top + bh * 0.22, bw, bh * 0.78);
+  ctx.fillStyle = '#9a9890'; ctx.fillRect(cx - bw * 0.41, top + bh * 0.12, bw * 0.82, bh * 0.10);
+  ctx.fillStyle = '#aeaca4'; ctx.fillRect(cx - bw * 0.30, top + bh * 0.04, bw * 0.60, bh * 0.08);
+  ctx.fillStyle = '#b8b6ae'; ctx.fillRect(cx - bw * 0.19, top, bw * 0.38, bh * 0.04);
+  const ww = (bw - 6) / (4 * 1.9); const wh = ww * 1.1;
+  for (let r = 0; r < 13; r++) for (let c = 0; c < 4; c++) {
+    ctx.fillStyle = absPr(c * 9 + r * 17 + 200) > 0.34 ? 'rgba(170,198,210,0.50)' : 'rgba(38,38,35,0.55)';
+    ctx.fillRect(left + 3 + c * ww * 1.9, top + bh * 0.26 + r * wh * 2.3, ww, wh);
+  }
+}
+
+function drawTrianon(ctx: CanvasRenderingContext2D, W: number, skyH: number) {
+  const cx = W * 0.36; const bh = skyH * 0.62;
+  const bw = Math.max(22, W * 0.030); const top = skyH - bh; const left = cx - bw / 2;
+  const gr = ctx.createLinearGradient(left, 0, left + bw, 0);
+  gr.addColorStop(0, '#a0a09a'); gr.addColorStop(0.3, '#d4d2ca'); gr.addColorStop(1, '#9a9892');
+  ctx.fillStyle = gr; ctx.fillRect(left, top + bh * 0.05, bw, bh * 0.95);
+  ctx.fillRect(cx - bw * 0.42, top, bw * 0.84, bh * 0.05);
+  const ww = Math.max(2, (bw - 8) / (5 * 2.4)); const wh = Math.max(3, ww * 2.0);
+  for (let r = 0; r < 16; r++) for (let c = 0; c < 5; c++) {
+    ctx.fillStyle = absPr(c * 11 + r * 7 + 300) > 0.36 ? 'rgba(140,195,230,0.55)' : 'rgba(55,52,48,0.5)';
+    ctx.fillRect(left + 4 + c * ww * 2.4, top + bh * 0.09 + r * wh * 2.1, ww, wh);
+  }
+  ctx.fillStyle = 'rgba(215,232,242,0.17)'; ctx.fillRect(left + 2, top, bw * 0.24, bh);
+}
+
+function drawTaunusturm(ctx: CanvasRenderingContext2D, W: number, skyH: number) {
+  const cx = W * 0.76; const bh = skyH * 0.58;
+  const bw = Math.max(16, W * 0.022); const top = skyH - bh; const left = cx - bw / 2;
+  const gr = ctx.createLinearGradient(left, 0, left + bw, 0);
+  gr.addColorStop(0, '#384a60'); gr.addColorStop(0.3, '#5880a8'); gr.addColorStop(1, '#283a58');
+  ctx.fillStyle = gr; ctx.fillRect(left, top, bw, bh);
+  ctx.fillStyle = '#4a6888'; ctx.fillRect(cx - 1, top - bh * 0.06, 2, bh * 0.06);
+  const ww = (bw - 4) / (3 * 1.8); const wh = ww;
+  for (let r = 0; r < 13; r++) for (let c = 0; c < 3; c++) {
+    ctx.fillStyle = absPr(c * 6 + r * 19 + 400) > 0.40 ? 'rgba(130,200,235,0.50)' : 'rgba(28,45,72,0.6)';
+    ctx.fillRect(left + 2 + c * ww * 1.8, top + 6 + r * wh * 2.4, ww, wh);
+  }
+  ctx.fillStyle = 'rgba(130,195,240,0.14)'; ctx.fillRect(left + 2, top, bw * 0.25, bh);
+}
+
 export function renderBackground(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
   const skyH = H * 0.70;
-
   renderSky(ctx, W, skyH, t);
 
-  // Far buildings — silver glass (Commerzbank style)
-  FAR_BUILDINGS.forEach((b, i) =>
-    drawBuilding(ctx, b, W, skyH, '#b8c8d8', 'rgba(120,180,230,0.45)', 'rgba(60,90,130,0.3)', i));
+  // Far backdrop fillers
+  const fillers = [
+    { cx: 0.06 * W, bw: W * 0.030, bh: skyH * 0.40, c: '#8090a0' },
+    { cx: 0.09 * W, bw: W * 0.020, bh: skyH * 0.48, c: '#7888a0' },
+    { cx: 0.84 * W, bw: W * 0.025, bh: skyH * 0.44, c: '#8090a0' },
+    { cx: 0.89 * W, bw: W * 0.035, bh: skyH * 0.36, c: '#909890' },
+    { cx: 0.93 * W, bw: W * 0.020, bh: skyH * 0.46, c: '#8898a8' },
+    { cx: 0.47 * W, bw: W * 0.016, bh: skyH * 0.34, c: '#9090a0' },
+  ];
+  fillers.forEach(f => {
+    ctx.fillStyle = f.c; ctx.fillRect(f.cx - f.bw / 2, skyH - f.bh, f.bw, f.bh);
+    ctx.fillStyle = 'rgba(140,170,220,0.10)'; ctx.fillRect(f.cx - f.bw / 2 + 2, skyH - f.bh, f.bw * 0.28, f.bh);
+  });
 
-  // Mid buildings — concrete/stone
+  // Frankfurt iconic landmarks
+  drawTaunusturm(ctx, W, skyH);
+  drawWestendTower(ctx, W, skyH);
+  drawTrianon(ctx, W, skyH);
+  drawDeutscheBank(ctx, W, skyH);
+  drawMainTower(ctx, W, skyH);
+  drawMesseturm(ctx, W, skyH);
+  drawCommerzbank(ctx, W, skyH);
+
+  // Mid buildings
   MID_BUILDINGS.forEach((b, i) =>
     drawBuilding(ctx, b, W, skyH, '#c8c0b0', 'rgba(200,220,240,0.6)', 'rgba(80,70,55,0.55)', i + 100));
 
-  // Near buildings — warm Frankfurt sandstone
+  // Near buildings
   NEAR_BUILDINGS.forEach((b, i) =>
     drawBuilding(ctx, b, W, skyH, '#c4a878', 'rgba(180,200,220,0.55)', 'rgba(70,55,35,0.6)', i + 200));
 
-  renderStreet(ctx, W, H, skyH);
+  renderMainufer(ctx, W, H, skyH);
+}
+
+// ─── Shotgun barrel (FPS view) ───────────────────────────────────────────────
+
+export function renderGunBarrel(ctx: CanvasRenderingContext2D, W: number, H: number, shotFlash: number, crosshairX: number, crosshairY: number) {
+  const recoil = shotFlash * 18;
+  const barrelLen = H * 0.25;
+
+  // Barrel tracks crosshair with soft damping
+  const dx = crosshairX - W / 2;
+  const dy = H * 0.80 - crosshairY;
+  const rawAngle = Math.atan2(dx, Math.max(8, dy));
+  const angle = Math.max(-0.40, Math.min(0.40, rawAngle * 0.30));
+
+  ctx.save();
+  ctx.translate(W / 2, H + recoil);
+  ctx.rotate(angle);
+
+  // Stock (wood)
+  const woodGrad = ctx.createLinearGradient(-45, -70, 45, 0);
+  woodGrad.addColorStop(0, '#3a1e08');
+  woodGrad.addColorStop(0.3, '#6a3810');
+  woodGrad.addColorStop(0.6, '#5a2e0c');
+  woodGrad.addColorStop(1, '#2a1206');
+  ctx.fillStyle = woodGrad;
+  ctx.beginPath(); ctx.roundRect(-44, -65, 88, 70, [10, 10, 0, 0]); ctx.fill();
+  ctx.strokeStyle = 'rgba(30,12,3,0.3)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 7; i++) {
+    ctx.beginPath(); ctx.moveTo(-40, -58 + i * 9); ctx.lineTo(40, -53 + i * 9); ctx.stroke();
+  }
+
+  // Double barrel
+  const sep = 16;
+  [-sep / 2 - 9, sep / 2 - 9].forEach((ox, idx) => {
+    const bw = 18;
+    const mg = ctx.createLinearGradient(ox - bw / 2, 0, ox + bw / 2, 0);
+    mg.addColorStop(0, '#1a1a1a'); mg.addColorStop(0.2, '#484848');
+    mg.addColorStop(0.5, '#6a6a6a'); mg.addColorStop(0.8, '#484848'); mg.addColorStop(1, '#0e0e0e');
+    ctx.fillStyle = mg;
+    ctx.fillRect(ox - bw / 2, -barrelLen, bw, barrelLen - 40);
+    // Tip ring
+    ctx.fillStyle = '#111';
+    ctx.fillRect(ox - bw / 2 - 1, -barrelLen, bw + 2, 7);
+    // Bore
+    ctx.fillStyle = '#050505';
+    ctx.beginPath(); ctx.ellipse(ox, -barrelLen + 4, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+    // Shine
+    ctx.fillStyle = 'rgba(200,200,200,0.26)';
+    ctx.fillRect(ox - bw / 2 + 3, -barrelLen + 8, 4, barrelLen - 52);
+    // Rib band
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(ox - bw / 2, -barrelLen * 0.38, bw, 5);
+    // Muzzle flash
+    if (shotFlash > 0.01) {
+      const fa = Math.min(1, shotFlash * 1.2);
+      const fr = shotFlash * 22 + idx * 4;
+      ctx.save();
+      ctx.globalAlpha = fa * 0.95;
+      const fg = ctx.createRadialGradient(ox, -barrelLen, 0, ox, -barrelLen, fr * 1.8);
+      fg.addColorStop(0, '#fff'); fg.addColorStop(0.25, '#ffe060');
+      fg.addColorStop(0.6, '#ff7700'); fg.addColorStop(1, 'rgba(255,80,0,0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.arc(ox, -barrelLen, fr * 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = fa * 0.22;
+      ctx.fillStyle = '#ccc';
+      ctx.beginPath(); ctx.arc(ox, -barrelLen - fr, fr * 0.9, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  });
+
+  // Connector band
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(-(sep / 2 + 18), -barrelLen * 0.12, sep + 36, 7);
+  // Forestock wood
+  const fsG = ctx.createLinearGradient(-20, 0, 20, 0);
+  fsG.addColorStop(0, '#3a1e08'); fsG.addColorStop(0.5, '#5a2e0c'); fsG.addColorStop(1, '#2a1206');
+  ctx.fillStyle = fsG;
+  ctx.beginPath(); ctx.roundRect(-20, -barrelLen * 0.36, 40, barrelLen * 0.3, 5); ctx.fill();
+
+  ctx.restore();
 }
 
 // ─── Pigeon (Moorhuhn-style — round, big, funny) ──────────────────────────────
