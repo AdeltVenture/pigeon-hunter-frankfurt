@@ -161,199 +161,127 @@ function drawCrazyPigeon(ctx: CanvasRenderingContext2D, x: number, y: number, t:
 }
 
 function drawClemens(ctx: CanvasRenderingContext2D, cx: number, cy: number, t: number, scale: number) {
-  const bob = Math.sin(t * 1.9) * 9;
+  const bob = Math.sin(t * 1.9) * 6;
   const capeWave = Math.sin(t * 2.3);
 
   ctx.save();
   ctx.translate(cx, cy + bob);
   ctx.scale(scale, scale);
 
-  // Hero glow
-  const glow = ctx.createRadialGradient(0, -40, 15, 0, -40, 170);
-  glow.addColorStop(0, 'rgba(255,215,40,0.42)');
-  glow.addColorStop(0.4, 'rgba(255,140,0,0.14)');
+  // Subtle glow
+  const glow = ctx.createRadialGradient(0, -30, 5, 0, -30, 110);
+  glow.addColorStop(0, 'rgba(255,215,40,0.30)');
+  glow.addColorStop(0.5, 'rgba(255,140,0,0.08)');
   glow.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(0, -40, 170, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -30, 110, 0, Math.PI * 2); ctx.fill();
 
   // Cape (behind body)
   ctx.fillStyle = '#cc1122';
   ctx.beginPath();
-  ctx.moveTo(-10, -55);
-  ctx.bezierCurveTo(-55 + capeWave * 25, -8, -68 + capeWave * 30, 55, -50 + capeWave * 35, 95);
-  ctx.lineTo(-8, 90);
-  ctx.bezierCurveTo(-18, 48, -8, 5, -10, -55);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = '#ffd700';
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
+  ctx.moveTo(-8, -38);
+  ctx.bezierCurveTo(-48 + capeWave * 18, -2, -58 + capeWave * 22, 38, -42 + capeWave * 28, 68);
+  ctx.lineTo(-6, 64);
+  ctx.bezierCurveTo(-14, 32, -6, 2, -8, -38);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2; ctx.stroke();
 
-  // Boots
-  ctx.fillStyle = '#1a1a3a';
-  [[-27, 108] as [number, number], [5, 108] as [number, number]].forEach(([bx]) => {
-    ctx.fillRect(bx, 108, 22, 20);
-    ctx.beginPath(); ctx.ellipse(bx + 11, 127, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
-  });
+  // Body / shirt (simpler)
+  ctx.fillStyle = '#909090';
+  ctx.beginPath(); ctx.roundRect(-20, -12, 40, 48, [4, 4, 3, 3]); ctx.fill();
 
-  // Jeans
-  ctx.fillStyle = '#3a5a9a';
-  ctx.fillRect(-27, 48, 22, 64);
-  ctx.fillRect(5, 48, 22, 64);
-  ctx.fillRect(-27, 44, 54, 20);
-  ctx.fillStyle = '#2a1a08';
-  ctx.fillRect(-27, 42, 54, 7);
-  ctx.fillStyle = '#c89a30';
-  ctx.fillRect(-5, 42, 10, 7);
-
-  // Shirt
-  ctx.fillStyle = '#a8a8a8';
-  ctx.beginPath(); ctx.roundRect(-30, -18, 60, 66, [8, 8, 4, 4]); ctx.fill();
-  ctx.fillStyle = 'rgba(235,235,235,0.25)';
-  ctx.fillRect(-26, -14, 18, 60);
-
-  // Left arm
-  const lFist = { x: -56, y: -52 };
-  const lShldr = { x: -26, y: -12 };
-  const lAngle = Math.atan2(lFist.y - lShldr.y, lFist.x - lShldr.x);
-  const lLen = Math.hypot(lFist.x - lShldr.x, lFist.y - lShldr.y);
-  ctx.save();
-  ctx.translate((lFist.x + lShldr.x) / 2, (lFist.y + lShldr.y) / 2);
-  ctx.rotate(lAngle);
-  ctx.fillStyle = '#a8a8a8';
-  ctx.beginPath(); ctx.roundRect(-lLen / 2, -9, lLen, 18, 6); ctx.fill();
-  ctx.restore();
-  ctx.fillStyle = '#fad4a8';
-  ctx.beginPath(); ctx.arc(lFist.x, lFist.y, 14, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#e8b888';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(lFist.x, lFist.y, 9, Math.PI * 0.8, Math.PI * 1.8); ctx.stroke();
-
-  // Right arm
-  const rFist = { x: 56, y: -52 };
-  const rShldr = { x: 26, y: -12 };
-  const rAngle = Math.atan2(rFist.y - rShldr.y, rFist.x - rShldr.x);
-  const rLen = Math.hypot(rFist.x - rShldr.x, rFist.y - rShldr.y);
-  ctx.save();
-  ctx.translate((rFist.x + rShldr.x) / 2, (rFist.y + rShldr.y) / 2);
-  ctx.rotate(rAngle);
-  ctx.fillStyle = '#a8a8a8';
-  ctx.beginPath(); ctx.roundRect(-rLen / 2, -9, rLen, 18, 6); ctx.fill();
-  ctx.restore();
-  ctx.fillStyle = '#fad4a8';
-  ctx.beginPath(); ctx.arc(rFist.x, rFist.y, 14, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#e8b888';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(rFist.x, rFist.y, 9, -Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
-
-  // Shotgun in right hand
-  ctx.save();
-  ctx.translate(rFist.x + 8, rFist.y - 8);
-  ctx.rotate(-0.45);
-  // Stock
-  const stockG = ctx.createLinearGradient(-6, 0, 6, 0);
-  stockG.addColorStop(0, '#2a1206'); stockG.addColorStop(0.5, '#6a3810'); stockG.addColorStop(1, '#2a1206');
-  ctx.fillStyle = stockG;
-  ctx.beginPath(); ctx.roundRect(0, -6, 28, 10, 3); ctx.fill();
-  // Barrel (double)
-  [-3, 3].forEach(oy => {
-    const bG = ctx.createLinearGradient(0, oy - 4, 0, oy + 4);
-    bG.addColorStop(0, '#1a1a1a'); bG.addColorStop(0.5, '#585858'); bG.addColorStop(1, '#1a1a1a');
-    ctx.fillStyle = bG;
-    ctx.fillRect(26, oy - 3.5, 55, 7);
-    // Barrel tip
-    ctx.fillStyle = '#111';
-    ctx.fillRect(78, oy - 4.5, 5, 9);
-    ctx.fillStyle = '#040404';
-    ctx.beginPath(); ctx.ellipse(80, oy, 2.5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-  });
-  // Guard
-  ctx.fillStyle = '#2a2a2a';
-  ctx.fillRect(14, -8, 14, 20);
-  // Trigger
-  ctx.strokeStyle = '#444';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(20, 2); ctx.lineTo(24, 12); ctx.stroke();
-  ctx.restore();
-
-  // Batman logo
-  ctx.fillStyle = '#111111';
-  ctx.beginPath(); ctx.ellipse(0, 20, 23, 14, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#ffcc00';
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  // Batman logo (compact)
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.ellipse(0, 14, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 2; ctx.stroke();
   ctx.fillStyle = '#ffcc00';
   ctx.beginPath();
-  ctx.moveTo(0, 11);
-  ctx.lineTo(-9, 13); ctx.lineTo(-18, 11); ctx.lineTo(-13, 17);
-  ctx.lineTo(-21, 22); ctx.lineTo(-11, 26); ctx.lineTo(-5, 22);
-  ctx.lineTo(0, 25); ctx.lineTo(5, 22); ctx.lineTo(11, 26);
-  ctx.lineTo(21, 22); ctx.lineTo(13, 17); ctx.lineTo(18, 11);
-  ctx.lineTo(9, 13); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#111111';
-  ctx.beginPath(); ctx.moveTo(-3, 11); ctx.lineTo(0, 16); ctx.lineTo(3, 11); ctx.closePath(); ctx.fill();
+  ctx.moveTo(0, 9); ctx.lineTo(-5, 11); ctx.lineTo(-11, 9);
+  ctx.lineTo(-7, 13); ctx.lineTo(-12, 17); ctx.lineTo(-6, 19);
+  ctx.lineTo(-3, 17); ctx.lineTo(0, 19); ctx.lineTo(3, 17);
+  ctx.lineTo(6, 19); ctx.lineTo(12, 17); ctx.lineTo(7, 13);
+  ctx.lineTo(11, 9); ctx.lineTo(5, 11); ctx.closePath(); ctx.fill();
+
+  // Legs
+  ctx.fillStyle = '#3a5a9a';
+  ctx.fillRect(-18, 34, 14, 38);
+  ctx.fillRect(4, 34, 14, 38);
+  // Boots
+  ctx.fillStyle = '#1a1a3a';
+  ctx.fillRect(-20, 66, 18, 12);
+  ctx.fillRect(2, 66, 18, 12);
+
+  // Left arm
+  ctx.fillStyle = '#909090';
+  ctx.beginPath(); ctx.roundRect(-34, -10, 18, 12, 4); ctx.fill();
+  ctx.fillStyle = '#fad4a8';
+  ctx.beginPath(); ctx.arc(-34, -6, 9, 0, Math.PI * 2); ctx.fill();
+
+  // Right arm + shotgun
+  ctx.fillStyle = '#909090';
+  ctx.beginPath(); ctx.roundRect(16, -10, 18, 12, 4); ctx.fill();
+  ctx.fillStyle = '#fad4a8';
+  ctx.beginPath(); ctx.arc(34, -6, 9, 0, Math.PI * 2); ctx.fill();
+
+  // Shotgun
+  ctx.save();
+  ctx.translate(36, -9);
+  ctx.rotate(-0.42);
+  const sg = ctx.createLinearGradient(-3, 0, 3, 0);
+  sg.addColorStop(0, '#2a1008'); sg.addColorStop(0.5, '#5a2808'); sg.addColorStop(1, '#1a0804');
+  ctx.fillStyle = sg; ctx.beginPath(); ctx.roundRect(0, -3, 18, 7, 2); ctx.fill();
+  [-1.5, 1.5].forEach(oy => {
+    const mg = ctx.createLinearGradient(0, oy - 2.5, 0, oy + 2.5);
+    mg.addColorStop(0, '#111'); mg.addColorStop(0.5, '#484848'); mg.addColorStop(1, '#111');
+    ctx.fillStyle = mg; ctx.fillRect(17, oy - 2, 32, 4);
+    ctx.fillStyle = '#060606'; ctx.fillRect(47, oy - 3, 4, 6);
+  });
+  ctx.fillStyle = '#222'; ctx.fillRect(10, -5, 9, 10);
+  ctx.restore();
 
   // Neck
   ctx.fillStyle = '#fad4a8';
-  ctx.fillRect(-11, -24, 22, 15);
+  ctx.fillRect(-7, -18, 14, 10);
 
-  // Head (big round baby face)
+  // Head (big, round, simple — no chubby cheeks, no nose)
   ctx.fillStyle = '#fad4a8';
-  ctx.beginPath(); ctx.arc(0, -62, 46, 0, Math.PI * 2); ctx.fill();
-  // Chubby cheeks
-  ctx.beginPath(); ctx.arc(-42, -48, 20, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(42, -48, 20, 0, Math.PI * 2); ctx.fill();
-  ctx.fillRect(-40, -56, 80, 20);
+  ctx.beginPath(); ctx.arc(0, -44, 34, 0, Math.PI * 2); ctx.fill();
 
-  // Short blonde hair (from photo!)
+  // Short blonde hair
   ctx.fillStyle = '#e8c858';
   ctx.beginPath();
-  ctx.arc(0, -66, 47, Math.PI * 1.05, Math.PI * 1.95, false);
-  ctx.arc(0, -66, 32, Math.PI * 1.95, Math.PI * 1.05, true);
+  ctx.arc(0, -48, 35, Math.PI * 1.05, Math.PI * 1.95, false);
+  ctx.arc(0, -48, 22, Math.PI * 1.95, Math.PI * 1.05, true);
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#f2d870';
   ctx.beginPath();
-  ctx.arc(2, -72, 46, Math.PI * 1.15, Math.PI * 1.82, false);
-  ctx.arc(2, -72, 38, Math.PI * 1.82, Math.PI * 1.15, true);
+  ctx.arc(1, -53, 34, Math.PI * 1.15, Math.PI * 1.82, false);
+  ctx.arc(1, -53, 27, Math.PI * 1.82, Math.PI * 1.15, true);
   ctx.closePath(); ctx.fill();
 
-  // Eyes (big baby blue eyes)
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath(); ctx.ellipse(-17, -67, 15, 17, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(17, -67, 15, 17, 0, 0, Math.PI * 2); ctx.fill();
+  // Eyes (big blue, simple)
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(-12, -47, 10, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(12, -47, 10, 12, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#4880c0';
-  ctx.beginPath(); ctx.arc(-17, -66, 11, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(17, -66, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-12, -46, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(12, -46, 7, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#181818';
-  ctx.beginPath(); ctx.arc(-16, -65, 6, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(18, -65, 6, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.beginPath(); ctx.arc(-13, -69, 3, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(21, -69, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-11, -45, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(13, -45, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath(); ctx.arc(-9, -48, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(15, -48, 1.8, 0, Math.PI * 2); ctx.fill();
 
-  // Eyebrows (light blonde)
-  ctx.strokeStyle = '#c8a030';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(-30, -86); ctx.quadraticCurveTo(-17, -91, -5, -87); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(5, -87); ctx.quadraticCurveTo(17, -91, 30, -86); ctx.stroke();
+  // Eyebrows (light)
+  ctx.strokeStyle = '#c8a030'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-20, -61); ctx.quadraticCurveTo(-12, -65, -4, -62); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(4, -62); ctx.quadraticCurveTo(12, -65, 20, -61); ctx.stroke();
 
-  // Nose — tiny baby button nose (2 small nostril dots only)
-  ctx.fillStyle = 'rgba(210,130,100,0.55)';
-  ctx.beginPath(); ctx.arc(-4, -52, 2.2, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(4, -52, 2.2, 0, Math.PI * 2); ctx.fill();
-
-  // Rosy cheeks
-  ctx.fillStyle = 'rgba(255,130,120,0.28)';
-  ctx.beginPath(); ctx.ellipse(-37, -48, 15, 10, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(37, -48, 15, 10, 0, 0, Math.PI * 2); ctx.fill();
-
-  // Smile
-  ctx.strokeStyle = '#d08060';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
+  // Simple smile
+  ctx.strokeStyle = '#d08060'; ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(-12, -38); ctx.quadraticCurveTo(0, -30, 12, -38);
+  ctx.moveTo(-9, -28); ctx.quadraticCurveTo(0, -22, 9, -28);
   ctx.stroke();
 
   ctx.restore();
@@ -398,10 +326,10 @@ export default function IntroScreen({ onStart }: Props) {
     resize();
     window.addEventListener('resize', resize);
 
-    const bgPigeons = Array.from({ length: 3 }, (_, i) => ({
-      x: (0.1 + i * 0.35) * window.innerWidth,
-      y: (0.18 + i * 0.09) * window.innerHeight,
-      vx: 55 + i * 28,
+    const bgPigeons = Array.from({ length: 5 }, (_, i) => ({
+      x: (0.05 + i * 0.22) * window.innerWidth,
+      y: (0.15 + i * 0.08) * window.innerHeight,
+      vx: 60 + i * 22,
     }));
 
     let startTs = 0;
@@ -433,12 +361,12 @@ export default function IntroScreen({ onStart }: Props) {
       bgPigeons.forEach(p => {
         p.x += p.vx * dt;
         if (p.x > W + 80) p.x = -80;
-        const s = 0.42 + (p.y / H) * 0.35;
+        const s = 0.85 + (p.y / H) * 0.55;
         drawCrazyPigeon(ctx, p.x, p.y, t, s);
       });
 
       // Clemens — slightly left of center so title stays visible
-      const charScale = Math.min(H * 0.0032, W * 0.0014, 1.4);
+      const charScale = Math.min(H * 0.0022, W * 0.0010, 0.95);
       const charX = W * 0.38;
       const charY = H * 0.60;
       drawClemens(ctx, charX, charY, t, charScale);
